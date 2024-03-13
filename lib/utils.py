@@ -247,6 +247,7 @@ def get_next_batch(dataloader):
 
     batch_dict["mode"] = data_dict["mode"]
     batch_dict["re_encode"] = data_dict["re_encode"]
+    batch_dict["run_backwards"] = data_dict["run_backwards"]
     return batch_dict
 
 
@@ -505,6 +506,7 @@ def split_and_subsample_batch(data_dict, args, data_type="train"):
 
     # Add re-encoding argument
     processed_dict["re_encode"] = args.re_encode
+    processed_dict["run_backwards"] = args.run_backwards
     return processed_dict
 
 

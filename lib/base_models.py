@@ -249,7 +249,8 @@ class VAE_Baseline(nn.Module):
         pred_y, info = self.get_reconstruction(batch_dict["tp_to_predict"],
                                                batch_dict["observed_data"], batch_dict["observed_tp"],
                                                mask=batch_dict["observed_mask"], n_traj_samples=n_traj_samples,
-                                               mode=batch_dict["mode"], re_encode=batch_dict["re_encode"])
+                                               mode=batch_dict["mode"], re_encode=batch_dict["re_encode"],
+                                               run_backwards=batch_dict["run_backwards"])
 
         # print("get_reconstruction done -- computing likelihood")
         fp_mu, fp_std, fp_enc = info["first_point"]
