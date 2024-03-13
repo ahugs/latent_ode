@@ -56,17 +56,17 @@ class LatentODE(VAE_Baseline):
             truth_w_mask = truth
             if mask is not None:
                 truth_w_mask = torch.cat((truth, mask), -1)
-            first_point_mu, first_point_std = self.encoder_z0(
+            first_point_mu, first_point_logvar = self.encoder_z0(
                 truth_w_mask, truth_time_steps, run_backwards=run_backwards)
 
             means_z0 = first_point_mu.repeat(n_traj_samples, 1, 1)
-            sigma_z0 = first_point_std.repeat(n_traj_samples, 1, 1)
-            first_point_enc = utils.sample_standard_gaussian(means_z0, sigma_z0)
+            logvar_z0 = first_point_logvar.repeat(n_traj_samples, 1, 1)
+            first_point_enc = utils.sample_standard_gaussian(means_z0, logvar_z0)
 
         else:
             raise Exception("Unknown encoder type {}".format(type(self.encoder_z0).__name__))
 
-        first_point_std = first_point_std.abs()
+        first_point_std = torch.exp(.5 * first_point_logvar)
         assert (torch.sum(first_point_std < 0) == 0.)
 
         if self.use_poisson_proc:
@@ -150,7 +150,7 @@ class LatentODE(VAE_Baseline):
         if sample_prior:
             n_trajs, n_samples, n_dims = first_point.size()
             self.encoder_z0.last_yi = torch.zeros(n_trajs, n_samples, n_dims * 2).to(self.device)
-            self.encoder_z0.last_yi_std = torch.zeros(n_trajs, n_samples, n_dims * 2).to(self.device)
+            self.encoder_z0.last_yi_logvar = torch.zeros(n_trajs, n_samples, n_dims * 2).to(self.device)
         # else:
             # FIXME: Set latent state to zero, what is the latent space when sampling prior?
             # h_0_mean, h_0_stdv = self.encoder_z0.last_yi.clone(), self.encoder_z0.last_yi_std.clone()

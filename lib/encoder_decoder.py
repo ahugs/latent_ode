@@ -54,18 +54,18 @@ class GRU_unit(nn.Module):
         else:
             self.ew_state_net = new_state_net
 
-    def forward(self, y_mean, y_std, x, masked_update=True):
-        y_concat = torch.cat([y_mean, y_std, x], -1)
+    def forward(self, y_mean, y_logvar, x, masked_update=True):
+        y_concat = torch.cat([y_mean, y_logvar, x], -1)
 
         update_gate = self.update_gate(y_concat)
         reset_gate = self.reset_gate(y_concat)
-        concat = torch.cat([y_mean * reset_gate, y_std * reset_gate, x], -1)
+        concat = torch.cat([y_mean * reset_gate, y_logvar * reset_gate, x], -1)
 
-        new_state, new_state_std = utils.split_last_dim(self.new_state_net(concat))
-        new_state_std = new_state_std.abs()
+        new_state, new_state_logvar = utils.split_last_dim(self.new_state_net(concat))
+        # new_state_logvar = new_state_logvar.abs()
 
         new_y = (1 - update_gate) * new_state + update_gate * y_mean
-        new_y_std = (1 - update_gate) * new_state_std + update_gate * y_std
+        new_y_logvar = (1 - update_gate) * new_state_logvar + update_gate * y_logvar
 
         assert (not torch.isnan(new_y).any())
 
@@ -81,7 +81,7 @@ class GRU_unit(nn.Module):
             assert (not torch.isnan(mask).any())
             # If mask = 1, i.e., the feature is present, accept update, otherwise accept ODE predicted value
             new_y = mask * new_y + (1 - mask) * y_mean
-            new_y_std = mask * new_y_std + (1 - mask) * y_std
+            new_y_logvar = mask * new_y_logvar + (1 - mask) * y_logvar
 
             if torch.isnan(new_y).any():
                 print("new_y is nan!")
@@ -90,8 +90,8 @@ class GRU_unit(nn.Module):
                 print(prev_new_y)
                 exit()
 
-        new_y_std = new_y_std.abs()
-        return new_y, new_y_std
+        # new_y_logvar = new_y_logvar.abs()
+        return new_y, new_y_logvar
 
 
 class Encoder_z0_RNN(nn.Module):
@@ -153,13 +153,13 @@ class Encoder_z0_RNN(nn.Module):
 
         self.extra_info = {"rnn_outputs": outputs, "time_points": time_steps}
 
-        mean, std = utils.split_last_dim(self.hiddens_to_z0(last_output))
-        std = std.abs()
+        mean, logvar = utils.split_last_dim(self.hiddens_to_z0(last_output))
+        # std = std.abs()
 
         assert (not torch.isnan(mean).any())
-        assert (not torch.isnan(std).any())
+        assert (not torch.isnan(logvar).any())
 
-        return mean.unsqueeze(0), std.unsqueeze(0)
+        return mean.unsqueeze(0), logvar.unsqueeze(0)
 
 
 class Encoder_z0_ODE_RNN(nn.Module):
@@ -198,7 +198,7 @@ class Encoder_z0_ODE_RNN(nn.Module):
             nn.Linear(100, self.z0_dim * 2), )
         utils.init_network_weights(self.transform_z0)
         self.last_yi = None
-        self.last_yi_std = None
+        self.last_yi_logvar = None
 
     def forward(self, data, time_steps, run_backwards=True, save_info=False, use_last_state = False):
         # data, time_steps -- observations and their time stamps
@@ -215,29 +215,29 @@ class Encoder_z0_ODE_RNN(nn.Module):
 
         if len(time_steps) == 1:
             prev_y = torch.zeros((1, n_traj, self.latent_dim)).to(self.device)
-            prev_std = torch.zeros((1, n_traj, self.latent_dim)).to(self.device)
+            prev_logvar = torch.zeros((1, n_traj, self.latent_dim)).to(self.device)
 
             xi = data[:, 0, :].unsqueeze(0)
 
-            last_yi, last_yi_std = self.GRU_update(prev_y, prev_std, xi)
+            last_yi, last_yi_logvar = self.GRU_update(prev_y, prev_logvar, xi)
             extra_info = None
         else:
             # Added initial state in case it is provided
-            last_yi, last_yi_std, _, extra_info = self.run_odernn(
+            last_yi, last_yi_logvar , _, extra_info = self.run_odernn(
                 data, time_steps, run_backwards=run_backwards,
                 save_info=save_info, use_last_state = use_last_state)
 
         # Save in memory last cell state for future computations
-        self.last_yi, self.last_yi_std = last_yi.clone(), last_yi_std.clone()
+        self.last_yi, self.last_yi_logvar = last_yi.clone(), last_yi_logvar.clone()
         means_z0 = last_yi.reshape(n_samples, n_traj, self.latent_dim)
-        std_z0 = last_yi_std.reshape(n_samples, n_traj, self.latent_dim)
+        logvar_z0 = last_yi_logvar.reshape(n_samples, n_traj, self.latent_dim)
 
-        mean_z0, std_z0 = utils.split_last_dim(self.transform_z0(torch.cat((means_z0, std_z0), -1)))
-        std_z0 = std_z0.abs()
+        mean_z0, logvar_z0 = utils.split_last_dim(self.transform_z0(torch.cat((means_z0, logvar_z0), -1)))
+        # logvar_z0 = logvar_z0.abs()
         if save_info:
             self.extra_info = extra_info
 
-        return mean_z0, std_z0
+        return mean_z0, logvar_z0
 
     def run_odernn(self, data, time_steps,
                    run_backwards=True, save_info=False, use_last_state = False):
@@ -250,12 +250,12 @@ class Encoder_z0_ODE_RNN(nn.Module):
             # If not using last state, expect data to be a tensor [n_samples (prior), n_traj (batch), seq_len, n_dims]
             n_samples, n_traj, n_tp, n_dims = data.size()
             prev_y = self.last_yi if self.last_yi.size(0) == n_samples else self.last_yi.repeat(n_samples, 1, 1)
-            prev_std = self.last_yi_std if self.last_yi_std.size(0) == n_samples else self.last_yi_std.repeat(n_samples, 1, 1)
+            prev_logvar = self.last_yi_logvar if self.last_yi_logvar.size(0) == n_samples else self.last_yi_logvar.repeat(n_samples, 1, 1)
         else:
             # If not using last state, expect data to be a tensor [n_traj (batch), seq_len, n_dims]
             n_traj, n_tp, n_dims = data.size()
             prev_y = torch.zeros((1, n_traj, self.latent_dim)).to(device)
-            prev_std = torch.zeros((1, n_traj, self.latent_dim)).to(device)
+            prev_logvar = torch.zeros((1, n_traj, self.latent_dim)).to(device)
 
 
         interval_length = time_steps[-1] - time_steps[0]
@@ -307,25 +307,25 @@ class Encoder_z0_ODE_RNN(nn.Module):
                 xi = data[:, i, :].unsqueeze(0)
 
 
-            yi, yi_std = self.GRU_update(yi_ode, prev_std, xi)
+            yi, yi_logvar = self.GRU_update(yi_ode, prev_logvar, xi)
 
-            prev_y, prev_std = yi, yi_std
+            prev_y, prev_logvar = yi, yi_logvar
             prev_t, t_i = time_steps[i], time_steps[i - 1]
 
             latent_ys.append(yi)
 
             if save_info:
                 d = {"yi_ode": yi_ode.detach(),  # "yi_from_data": yi_from_data,
-                     "yi": yi.detach(), "yi_std": yi_std.detach(),
+                     "yi": yi.detach(), "yi_logvar": yi_logvar.detach(),
                      "time_points": time_points.detach(), "ode_sol": ode_sol.detach()}
                 extra_info.append(d)
 
         latent_ys = torch.stack(latent_ys, 1)
 
         assert (not torch.isnan(yi).any())
-        assert (not torch.isnan(yi_std).any())
+        assert (not torch.isnan(yi_logvar).any())
 
-        return yi, yi_std, latent_ys, extra_info
+        return yi, yi_logvar, latent_ys, extra_info
 
 
 class Decoder(nn.Module):
