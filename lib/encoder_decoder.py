@@ -276,9 +276,13 @@ class Encoder_z0_ODE_RNN(nn.Module):
             prev_t, t_i = time_steps[-1] + 0.01, time_steps[-1]
 
         for i in time_points_iter:
-            if (prev_t - t_i) < minimum_step:
+            dt = prev_t - t_i if run_backwards else t_i - prev_t
+            # print(f"Timestep {dt}")
+            # print(f"Is timestep smaller? {dt < minimum_step}")
+            if dt < minimum_step:
                 time_points = torch.stack((prev_t, t_i))
-                inc = self.z0_diffeq_solver.ode_func(prev_t, prev_y) * (t_i - prev_t)
+                inc = self.z0_diffeq_solver.ode_func(prev_t, prev_y) * (t_i - prev_t) #-dt
+                # print(f"Entered vanilla iteration {i}")
 
                 assert (not torch.isnan(inc).any())
 
@@ -287,7 +291,8 @@ class Encoder_z0_ODE_RNN(nn.Module):
 
                 assert (not torch.isnan(ode_sol).any())
             else:
-                n_intermediate_tp = max(2, ((prev_t - t_i) / minimum_step).int())
+                n_intermediate_tp = max(2, (dt / minimum_step).int())
+                # print(f"Entered at iteration {i}")
 
                 time_points = utils.linspace_vector(prev_t, t_i, n_intermediate_tp)
                 ode_sol = self.z0_diffeq_solver(prev_y, time_points)
@@ -310,7 +315,10 @@ class Encoder_z0_ODE_RNN(nn.Module):
             yi, yi_std = self.GRU_update(yi_ode, prev_std, xi)
 
             prev_y, prev_std = yi, yi_std
-            prev_t, t_i = time_steps[i], time_steps[i - 1]
+            # Dummy condition to handle overflow
+            prev_t, t_i = time_steps[i], time_steps[i + 1 if i + 1 < n_tp else i]
+            if run_backwards:
+                prev_t, t_i = time_steps[i], time_steps[i - 1]
 
             latent_ys.append(yi)
 

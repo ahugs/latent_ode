@@ -353,6 +353,13 @@ class Visualizations():
                               min_y=min_y, max_y=max_y,  # title="True trajectories",
                               marker='o', linestyle='', dim_to_show=dim_to_show,
                               color=cmap(2))
+            # Plot prediction values - TODO, only plot in extrap mode
+            plot_trajectories(self.ax_traj[traj_id],
+                              data[:n_traj_to_show][traj_id].unsqueeze(0), time_steps,
+                              mask=torch.ones_like(data[:n_traj_to_show][traj_id].unsqueeze(0)),
+                              min_y=min_y, max_y=max_y,  # title="True trajectories",
+                              marker='o', linestyle='', dim_to_show=dim_to_show,
+                              color=cmap(4), add_to_plot=True)
             # Plot reconstructions
             plot_trajectories(self.ax_traj[traj_id],
                               reconstructions_for_plotting[traj_id].unsqueeze(0), time_steps_to_predict,

@@ -174,6 +174,7 @@ class LatentODE(VAE_Baseline):
             # FIXME - should this be predicted mask?
             mask = torch.ones_like(x_hat)
             x_hat = torch.cat((x_hat, mask), dim=-1)
+            # MAKE SURE IT DOES NOT OFFSET INMITIAL TIMESTAMP
             mean_z, stdv_z = self.encoder_z0(x_hat, t_block, run_backwards=False, use_last_state=use_last_state)
             # Concatenate the solutions (do not add last element as it will be in next block)
             sol_y.append(z[:, :, :-1, :])
