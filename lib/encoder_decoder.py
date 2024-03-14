@@ -52,7 +52,9 @@ class GRU_unit(nn.Module):
                 nn.Linear(n_units, latent_dim * 2))
             utils.init_network_weights(self.new_state_net)
         else:
-            self.ew_state_net = new_state_net
+            self.new_state_net = new_state_net
+
+        # self.new_model = nn.GRU(input_dim, latent_dim * 2, batch_first=False).to(device)
 
     def forward(self, y_mean, y_std, x, masked_update=True):
         y_concat = torch.cat([y_mean, y_std, x], -1)
@@ -66,6 +68,11 @@ class GRU_unit(nn.Module):
 
         new_y = (1 - update_gate) * new_state + update_gate * y_mean
         new_y_std = (1 - update_gate) * new_state_std + update_gate * y_std
+
+        # GRU torch implementation
+        # new_state, _ = self.new_model(x, torch.cat([y_mean, y_std], -1))
+        # new_y, new_y_std = utils.split_last_dim(new_state)
+        # new_y_std.abs()
 
         assert (not torch.isnan(new_y).any())
 
@@ -223,7 +230,7 @@ class Encoder_z0_ODE_RNN(nn.Module):
             extra_info = None
         else:
             # Added initial state in case it is provided
-            last_yi, last_yi_std, _, extra_info = self.run_odernn(
+            last_yi, last_yi_std, _, latents_zs, extra_info = self.run_odernn(
                 data, time_steps, run_backwards=run_backwards,
                 save_info=save_info, use_last_state = use_last_state)
 
@@ -237,7 +244,7 @@ class Encoder_z0_ODE_RNN(nn.Module):
         if save_info:
             self.extra_info = extra_info
 
-        return mean_z0, std_z0
+        return mean_z0, std_z0, latents_zs
 
     def run_odernn(self, data, time_steps,
                    run_backwards=True, save_info=False, use_last_state = False):
@@ -268,6 +275,7 @@ class Encoder_z0_ODE_RNN(nn.Module):
         assert (not torch.isnan(time_steps).any())
 
         latent_ys = []
+        latent_zs = []
         # Run ODE backwards and combine the y(t) estimates using gating
         time_points_iter = range(0, len(time_steps))
         prev_t, t_i = time_steps[0] - 0.01, time_steps[0]
@@ -313,6 +321,8 @@ class Encoder_z0_ODE_RNN(nn.Module):
 
 
             yi, yi_std = self.GRU_update(yi_ode, prev_std, xi)
+            # Project memory states to latent to compute alignment loss
+            mean_z, _ = utils.split_last_dim(self.transform_z0(torch.cat((yi, yi_std), -1)))
 
             prev_y, prev_std = yi, yi_std
             # Dummy condition to handle overflow
@@ -321,6 +331,7 @@ class Encoder_z0_ODE_RNN(nn.Module):
                 prev_t, t_i = time_steps[i], time_steps[i - 1]
 
             latent_ys.append(yi)
+            latent_zs.append(mean_z)
 
             if save_info:
                 d = {"yi_ode": yi_ode.detach(),  # "yi_from_data": yi_from_data,
@@ -329,11 +340,12 @@ class Encoder_z0_ODE_RNN(nn.Module):
                 extra_info.append(d)
 
         latent_ys = torch.stack(latent_ys, 1)
+        latent_zs = torch.cat(latent_zs, 0)
 
         assert (not torch.isnan(yi).any())
         assert (not torch.isnan(yi_std).any())
 
-        return yi, yi_std, latent_ys, extra_info
+        return yi, yi_std, latent_ys, latent_zs, extra_info
 
 
 class Decoder(nn.Module):

@@ -56,7 +56,7 @@ class LatentODE(VAE_Baseline):
             truth_w_mask = truth
             if mask is not None:
                 truth_w_mask = torch.cat((truth, mask), -1)
-            first_point_mu, first_point_std = self.encoder_z0(
+            first_point_mu, first_point_std, latents_zs = self.encoder_z0(
                 truth_w_mask, truth_time_steps, run_backwards=run_backwards)
 
             means_z0 = first_point_mu.repeat(n_traj_samples, 1, 1)
@@ -99,9 +99,14 @@ class LatentODE(VAE_Baseline):
 
             pred_x = self.decoder(sol_y)
 
+        # Reconstructions from encoder's latent space
+        reconstructed_x = self.decoder(latents_zs)
+
         all_extra_info = {
             "first_point": (first_point_mu, first_point_std, first_point_enc),
-            "latent_traj": sol_y.detach()
+            "latent_traj": sol_y,
+            "latent_traj_encoder": latents_zs,
+            "reconstructed_traj_encoder": reconstructed_x
         }
 
         if self.use_poisson_proc:
@@ -175,7 +180,7 @@ class LatentODE(VAE_Baseline):
             mask = torch.ones_like(x_hat)
             x_hat = torch.cat((x_hat, mask), dim=-1)
             # MAKE SURE IT DOES NOT OFFSET INMITIAL TIMESTAMP
-            mean_z, stdv_z = self.encoder_z0(x_hat, t_block, run_backwards=False, use_last_state=use_last_state)
+            mean_z, stdv_z, _ = self.encoder_z0(x_hat, t_block, run_backwards=False, use_last_state=use_last_state)
             # Concatenate the solutions (do not add last element as it will be in next block)
             sol_y.append(z[:, :, :-1, :])
             pred_x.append(x_hat[:, :, :-1, 0:1])

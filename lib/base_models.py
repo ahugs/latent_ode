@@ -281,6 +281,13 @@ class VAE_Baseline(nn.Module):
             batch_dict["data_to_predict"], pred_y,
             mask=batch_dict["mask_predicted_data"])
 
+        # Compute alignment and reconstruction loss
+        predicted_latents = info['latent_traj']
+        latents_zs = info["latent_traj_encoder"]
+        reconstructed_x = info['reconstructed_traj_encoder']
+        mse_recons_loss = self.get_mse(reconstructed_x.permute(1, 0, 2), pred_y, None)
+        mse_alignment_loss = self.get_mse(latents_zs.permute(1, 0, 2), predicted_latents, None)
+
         pois_log_likelihood = torch.Tensor([0.]).to(get_device(batch_dict["data_to_predict"]))
         if self.use_poisson_proc:
             pois_log_likelihood = compute_poisson_proc_likelihood(
@@ -306,7 +313,7 @@ class VAE_Baseline(nn.Module):
                     mask=batch_dict["mask_predicted_data"])
 
         # IWAE loss
-        loss = - torch.logsumexp(rec_likelihood - kl_coef * kldiv_z0, 0)
+        loss = - torch.logsumexp(rec_likelihood - kl_coef * kldiv_z0, 0) + mse_recons_loss + mse_alignment_loss
         if torch.isnan(loss):
             loss = - torch.mean(rec_likelihood - kl_coef * kldiv_z0, 0)
 
@@ -323,6 +330,8 @@ class VAE_Baseline(nn.Module):
         results["loss"] = torch.mean(loss)
         results["likelihood"] = torch.mean(rec_likelihood).detach()
         results["mse"] = torch.mean(mse).detach()
+        results["mse_alignment"] = torch.mean(mse_alignment_loss).detach()
+        results["mse_reconstruction"] = torch.mean(mse_recons_loss).detach()
         results["pois_likelihood"] = torch.mean(pois_log_likelihood).detach()
         results["ce_loss"] = torch.mean(ce_loss).detach()
         results["kl_first_p"] = torch.mean(kldiv_z0).detach()
