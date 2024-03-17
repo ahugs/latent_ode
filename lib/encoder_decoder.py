@@ -230,7 +230,7 @@ class Encoder_z0_ODE_RNN(nn.Module):
             extra_info = None
         else:
             # Added initial state in case it is provided
-            last_yi, last_yi_std, _, latents_zs, extra_info = self.run_odernn(
+            last_yi, last_yi_std, latent_ys, latent_ys_std, extra_info = self.run_odernn(
                 data, time_steps, run_backwards=run_backwards,
                 save_info=save_info, use_last_state = use_last_state)
 
@@ -240,11 +240,17 @@ class Encoder_z0_ODE_RNN(nn.Module):
         std_z0 = last_yi_std.reshape(n_samples, n_traj, self.latent_dim)
 
         mean_z0, std_z0 = utils.split_last_dim(self.transform_z0(torch.cat((means_z0, std_z0), -1)))
+
+        # Project memory states to latent to compute alignment loss
+        mean_z, std_z = utils.split_last_dim(self.transform_z0(torch.cat((latent_ys, latent_ys_std), -1)))
+
+
         std_z0 = std_z0.abs()
+        std_z = std_z.abs()
         if save_info:
             self.extra_info = extra_info
 
-        return mean_z0, std_z0, latents_zs
+        return mean_z0, std_z0, mean_z, std_z
 
     def run_odernn(self, data, time_steps,
                    run_backwards=True, save_info=False, use_last_state = False):
@@ -275,7 +281,7 @@ class Encoder_z0_ODE_RNN(nn.Module):
         assert (not torch.isnan(time_steps).any())
 
         latent_ys = []
-        latent_zs = []
+        latent_ys_std = []
         # Run ODE backwards and combine the y(t) estimates using gating
         time_points_iter = range(0, len(time_steps))
         prev_t, t_i = time_steps[0] - 0.01, time_steps[0]
@@ -321,8 +327,6 @@ class Encoder_z0_ODE_RNN(nn.Module):
 
 
             yi, yi_std = self.GRU_update(yi_ode, prev_std, xi)
-            # Project memory states to latent to compute alignment loss
-            mean_z, _ = utils.split_last_dim(self.transform_z0(torch.cat((yi, yi_std), -1)))
 
             prev_y, prev_std = yi, yi_std
             # Dummy condition to handle overflow
@@ -331,7 +335,7 @@ class Encoder_z0_ODE_RNN(nn.Module):
                 prev_t, t_i = time_steps[i], time_steps[i - 1]
 
             latent_ys.append(yi)
-            latent_zs.append(mean_z)
+            latent_ys_std.append(yi_std)
 
             if save_info:
                 d = {"yi_ode": yi_ode.detach(),  # "yi_from_data": yi_from_data,
@@ -340,12 +344,16 @@ class Encoder_z0_ODE_RNN(nn.Module):
                 extra_info.append(d)
 
         latent_ys = torch.stack(latent_ys, 1)
-        latent_zs = torch.cat(latent_zs, 0)
+        latent_ys_std = torch.stack(latent_ys_std, 1)
 
         assert (not torch.isnan(yi).any())
         assert (not torch.isnan(yi_std).any())
 
-        return yi, yi_std, latent_ys, latent_zs, extra_info
+        if not run_backwards:
+            yi = latent_ys[:, 0, :, :]
+            yi_std = latent_ys_std[:, 0, :, :]
+
+        return yi, yi_std, latent_ys, latent_ys_std, extra_info
 
 
 class Decoder(nn.Module):
