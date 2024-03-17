@@ -187,7 +187,7 @@ class Visualizations():
 		ax.set_ylim(ylim)
 
 	def draw_one_density_plot(self, ax, model, data_dict, traj_id, 
-		multiply_by_poisson = False):
+						   multiply_by_poisson = False):
 		
 		scale = 5
 		cmap = add_white(plt.cm.get_cmap('Blues', 9)) # plt.cm.BuGn_r
@@ -305,8 +305,8 @@ class Visualizations():
 	
 
 
-    def draw_all_plots_one_dim(self, data_dict, model,
-                               plot_name="", save=False, save_dir=None, experimentID=0.):
+	def draw_all_plots_one_dim(self, data_dict, model, 
+							   plot_name="", save=False, save_dir=None, experimentID=0.):
 
 		data =  data_dict["data_to_predict"]
 		time_steps = data_dict["tp_to_predict"]
@@ -450,11 +450,11 @@ class Visualizations():
 
 		self.fig.tight_layout()
 		plt.draw()
-
-        if save:
-            if save_dir is not None:
-                dirname = f"{save_dir}/{str(experimentID)}/"
-            else:
-                dirname = "plots/" + str(experimentID) + "/"
-            os.makedirs(dirname, exist_ok=True)
-            self.fig.savefig(dirname + plot_name)
+	
+		if save:
+			if save_dir is not None:
+				dirname = f"{save_dir}/{str(experimentID)}/"
+			else:
+				dirname = "plots/" + str(experimentID) + "/"
+			os.makedirs(dirname, exist_ok=True)
+			self.fig.savefig(dirname + plot_name)
