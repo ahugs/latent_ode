@@ -205,8 +205,8 @@ def parse_datasets(args, device):
     # Sample a periodic function
     if dataset_name == "periodic":
         dataset_obj = Periodic_1d(
-            init_freq=None, init_amplitude=1.,
-            final_amplitude=1., final_freq=None,
+            init_freq=0.3, init_amplitude=1.,
+            final_amplitude=1., final_freq=1,
             z0=1.)
 
     ##################################################################
