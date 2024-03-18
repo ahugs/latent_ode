@@ -321,10 +321,11 @@ class Visualizations():
         if isinstance(model, LatentODE):
             # sample at the original time points
             time_steps_to_predict = utils.linspace_vector(time_steps[0], time_steps[-1], 100).to(device)
-
         reconstructions, info = model.get_reconstruction(time_steps_to_predict,
-                                                         observed_data, observed_time_steps, mask=observed_mask,
-                                                         n_traj_samples=10, re_encode=data_dict['re_encode'])
+                                               observed_data, observed_time_steps,
+                                               mask=observed_mask, n_traj_samples=10,
+                                               mode=data_dict["mode"], re_encode=data_dict["re_encode"],
+                                               run_backwards=data_dict["run_backwards"])
 
         n_traj_to_show = 3
         # plot only 10 trajectories
