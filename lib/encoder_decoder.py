@@ -244,7 +244,6 @@ class Encoder_z0_ODE_RNN(nn.Module):
         # Project memory states to latent to compute alignment loss
         mean_z, std_z = utils.split_last_dim(self.transform_z0(torch.cat((latent_ys, latent_ys_std), -1)))
 
-
         std_z0 = std_z0.abs()
         std_z = std_z.abs()
         if save_info:
@@ -267,8 +266,8 @@ class Encoder_z0_ODE_RNN(nn.Module):
         else:
             # If not using last state, expect data to be a tensor [n_traj (batch), seq_len, n_dims]
             n_traj, n_tp, n_dims = data.size()
-            prev_y = torch.zeros((1, n_traj, self.latent_dim)).to(device)
-            prev_std = torch.zeros((1, n_traj, self.latent_dim)).to(device)
+            prev_y = torch.ones((1, n_traj, self.latent_dim)).to(device) * 1e-2
+            prev_std = torch.ones((1, n_traj, self.latent_dim)).to(device) * 1e-2
 
 
         interval_length = time_steps[-1] - time_steps[0]
