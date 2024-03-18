@@ -29,7 +29,8 @@ class LatentODE(VAE_Baseline):
                  linear_classifier=False,
                  classif_per_tp=False,
                  n_labels=1,
-                 train_classif_w_reconstr=False):
+                 train_classif_w_reconstr=False,
+                 reconstruct_from_latent=False):
 
         super(LatentODE, self).__init__(
             input_dim=input_dim, latent_dim=latent_dim,
@@ -40,7 +41,8 @@ class LatentODE(VAE_Baseline):
             linear_classifier=linear_classifier,
             use_poisson_proc=use_poisson_proc,
             n_labels=n_labels,
-            train_classif_w_reconstr=train_classif_w_reconstr)
+            train_classif_w_reconstr=train_classif_w_reconstr,
+            reconstruct_from_latent=reconstruct_from_latent)
 
         self.encoder_z0 = encoder_z0
         self.diffeq_solver = diffeq_solver
