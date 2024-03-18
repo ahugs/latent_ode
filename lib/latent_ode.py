@@ -29,7 +29,8 @@ class LatentODE(VAE_Baseline):
                  linear_classifier=False,
                  classif_per_tp=False,
                  n_labels=1,
-                 train_classif_w_reconstr=False):
+                 train_classif_w_reconstr=False,
+                 reconstruct_from_latent=False):
 
         super(LatentODE, self).__init__(
             input_dim=input_dim, latent_dim=latent_dim,
@@ -40,7 +41,8 @@ class LatentODE(VAE_Baseline):
             linear_classifier=linear_classifier,
             use_poisson_proc=use_poisson_proc,
             n_labels=n_labels,
-            train_classif_w_reconstr=train_classif_w_reconstr)
+            train_classif_w_reconstr=train_classif_w_reconstr,
+            reconstruct_from_latent=reconstruct_from_latent)
 
         self.encoder_z0 = encoder_z0
         self.diffeq_solver = diffeq_solver
@@ -56,12 +58,18 @@ class LatentODE(VAE_Baseline):
             truth_w_mask = truth
             if mask is not None:
                 truth_w_mask = torch.cat((truth, mask), -1)
-            first_point_mu, first_point_std, latents_zs = self.encoder_z0(
+            first_point_mu, first_point_std, z_mu, z_std = self.encoder_z0(
                 truth_w_mask, truth_time_steps, run_backwards=run_backwards)
+            
+
 
             means_z0 = first_point_mu.repeat(n_traj_samples, 1, 1)
             sigma_z0 = first_point_std.repeat(n_traj_samples, 1, 1)
             first_point_enc = utils.sample_standard_gaussian(means_z0, sigma_z0)
+
+
+            latents_zs = utils.sample_standard_gaussian(z_mu.repeat(n_traj_samples, 1, 1, 1), 
+                                                        z_std.repeat(n_traj_samples, 1, 1, 1))
 
         else:
             raise Exception("Unknown encoder type {}".format(type(self.encoder_z0).__name__))
@@ -100,10 +108,12 @@ class LatentODE(VAE_Baseline):
             pred_x = self.decoder(sol_y)
 
         # Reconstructions from encoder's latent space
-        reconstructed_x = self.decoder(latents_zs)
+        reconstructed_x = self.decoder(latents_zs.permute(0,2,1,3))
 
         all_extra_info = {
             "first_point": (first_point_mu, first_point_std, first_point_enc),
+            "z_mu": z_mu,
+            "z_std": z_std,
             "latent_traj": sol_y,
             "latent_traj_encoder": latents_zs,
             "reconstructed_traj_encoder": reconstructed_x

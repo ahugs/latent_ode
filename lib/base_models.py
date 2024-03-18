@@ -179,7 +179,8 @@ class VAE_Baseline(nn.Module):
                  use_poisson_proc=False,
                  linear_classifier=False,
                  n_labels=1,
-                 train_classif_w_reconstr=False):
+                 train_classif_w_reconstr=False,
+                 reconstruct_from_latent=False):
 
         super(VAE_Baseline, self).__init__()
 
@@ -196,6 +197,8 @@ class VAE_Baseline(nn.Module):
         self.use_poisson_proc = use_poisson_proc
         self.linear_classifier = linear_classifier
         self.train_classif_w_reconstr = train_classif_w_reconstr
+
+        self.reconstruct_from_latent = reconstruct_from_latent
 
         z0_dim = latent_dim
         if use_poisson_proc:
@@ -253,13 +256,26 @@ class VAE_Baseline(nn.Module):
                                                run_backwards=batch_dict["run_backwards"])
 
         # print("get_reconstruction done -- computing likelihood")
-        fp_mu, fp_std, fp_enc = info["first_point"]
-        fp_std = fp_std.abs()
-        fp_distr = Normal(fp_mu, fp_std)
+        if self.reconstruct_from_latent:
+            z_mu = info["z_mu"]
+            z_std = info['z_std']
+            kldiv_z0 = 0
+            for i in range(z_mu.shape[1]):
+                fp_mu, fp_std = z_mu[:,i,:,:], z_std[:,i,:,:]#info["first_point"]
+                fp_std = fp_std.abs()
+                fp_distr = Normal(fp_mu, fp_std)
 
-        assert (torch.sum(fp_std < 0) == 0.)
+                assert (torch.sum(fp_std < 0) == 0.)
 
-        kldiv_z0 = kl_divergence(fp_distr, self.z0_prior)
+                kldiv_z0 += kl_divergence(fp_distr, self.z0_prior)
+            kldiv_z0 = kldiv_z0/z_mu.shape[1]
+        else:
+            fp_mu, fp_std, fp_enc = info["first_point"]
+            fp_std = fp_std.abs()
+            fp_distr = Normal(fp_mu, fp_std)
+
+            assert (torch.sum(fp_std < 0) == 0.)
+            kldiv_z0 = kl_divergence(fp_distr, self.z0_prior)
 
         if torch.isnan(kldiv_z0).any():
             print(fp_mu)
@@ -282,11 +298,12 @@ class VAE_Baseline(nn.Module):
             mask=batch_dict["mask_predicted_data"])
 
         # Compute alignment and reconstruction loss
-        predicted_latents = info['latent_traj']
-        latents_zs = info["latent_traj_encoder"]
-        reconstructed_x = info['reconstructed_traj_encoder']
-        mse_recons_loss = self.get_mse(reconstructed_x.permute(1, 0, 2), pred_y, None)
-        mse_alignment_loss = self.get_mse(latents_zs.permute(1, 0, 2), predicted_latents, None)
+        if self.reconstruct_from_latent:
+            predicted_latents = info['latent_traj']
+            latents_zs = info["latent_traj_encoder"]
+            reconstructed_x = info['reconstructed_traj_encoder']
+            mse_recons_loss = self.get_mse(batch_dict['data_to_predict'], reconstructed_x, None)
+            mse_alignment_loss = nn.MSELoss()(latents_zs.permute(0,2,1,3), predicted_latents)
 
         pois_log_likelihood = torch.Tensor([0.]).to(get_device(batch_dict["data_to_predict"]))
         if self.use_poisson_proc:
@@ -313,7 +330,11 @@ class VAE_Baseline(nn.Module):
                     mask=batch_dict["mask_predicted_data"])
 
         # IWAE loss
-        loss = - torch.logsumexp(rec_likelihood - kl_coef * kldiv_z0, 0) + mse_recons_loss + mse_alignment_loss
+        if self.reconstruct_from_latent:
+            loss = mse + mse_recons_loss + mse_alignment_loss + kldiv_z0
+        else:
+            loss = - torch.logsumexp(rec_likelihood - kl_coef * kldiv_z0, 0)
+
         if torch.isnan(loss):
             loss = - torch.mean(rec_likelihood - kl_coef * kldiv_z0, 0)
 
@@ -330,8 +351,9 @@ class VAE_Baseline(nn.Module):
         results["loss"] = torch.mean(loss)
         results["likelihood"] = torch.mean(rec_likelihood).detach()
         results["mse"] = torch.mean(mse).detach()
-        results["mse_alignment"] = torch.mean(mse_alignment_loss).detach()
-        results["mse_reconstruction"] = torch.mean(mse_recons_loss).detach()
+        if self.reconstruct_from_latent:
+            results["mse_alignment"] = torch.mean(mse_alignment_loss).detach()
+            results["mse_reconstruction"] = torch.mean(mse_recons_loss).detach()
         results["pois_likelihood"] = torch.mean(pois_log_likelihood).detach()
         results["ce_loss"] = torch.mean(ce_loss).detach()
         results["kl_first_p"] = torch.mean(kldiv_z0).detach()

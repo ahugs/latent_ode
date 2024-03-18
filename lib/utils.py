@@ -99,12 +99,12 @@ def split_last_dim(data):
     last_dim = data.size()[-1]
     last_dim = last_dim // 2
 
-    if len(data.size()) == 3:
-        res = data[:, :, :last_dim], data[:, :, last_dim:]
+    # if len(data.size()) == 3:
+    #     res = data[:, :, :last_dim], data[:, :, last_dim:]
 
-    if len(data.size()) == 2:
-        res = data[:, :last_dim], data[:, last_dim:]
-    return res
+    # if len(data.size()) == 2:
+    #     res = data[:, :last_dim], data[:, last_dim:]
+    return data[..., :last_dim], data[..., last_dim:]
 
 
 def init_network_weights(net, std=0.1):
