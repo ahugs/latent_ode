@@ -35,6 +35,7 @@ from lib.diffeq_solver import DiffeqSolver
 from mujoco_physics import HopperPhysics
 
 from lib.utils import compute_loss_all_batches
+import wandb
 
 # Generative model for noisy data based on ODE
 parser = argparse.ArgumentParser('Latent ODE')
@@ -103,6 +104,8 @@ utils.makedirs(args.save)
 if __name__ == '__main__':
 	torch.manual_seed(args.random_seed)
 	np.random.seed(args.random_seed)
+	w_run = wandb.init(project="latent-ode",
+					   config=args)
 
 	experimentID = args.load
 	if experimentID is None:
@@ -265,6 +268,7 @@ if __name__ == '__main__':
 
 		batch_dict = utils.get_next_batch(data_obj["train_dataloader"])
 		train_res = model.compute_all_losses(batch_dict, n_traj_samples = 3, kl_coef = kl_coef)
+		w_run.log({f"true/{key}": val for key, val in train_res.items()})
 		train_res["loss"].backward()
 		optimizer.step()
 
@@ -278,6 +282,7 @@ if __name__ == '__main__':
 					experimentID = experimentID,
 					device = device,
 					n_traj_samples = 3, kl_coef = kl_coef)
+				w_run.log({f"test/{key}": val for key, val in test_res.items()})
 
 				message = 'Epoch {:04d} [Test seq (cond on sampled tp)] | Loss {:.6f} | Likelihood {:.6f} | KL fp {:.4f} | FP STD {:.4f}|'.format(
 					itr//num_batches, 
@@ -324,8 +329,9 @@ if __name__ == '__main__':
 						plot_id = itr // num_batches // n_iters_to_viz
 						viz.draw_all_plots_one_dim(test_dict, model, 
 							plot_name = file_name + "_" + str(experimentID) + "_{:03d}".format(plot_id) + ".png",
-						 	experimentID = experimentID, save=True)
+						 	experimentID = experimentID, save=True, save_dir = w_run.dir)
 						plt.pause(0.01)
+						w_run.log({"test":wandb.Image(plt)})
 	torch.save({
 		'args': args,
 		'state_dict': model.state_dict(),
