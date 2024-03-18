@@ -164,8 +164,8 @@ class LatentODE(VAE_Baseline):
         # Save latent state in memory in case we need to re-encode from scratch again
         if sample_prior:
             n_trajs, n_samples, n_dims = first_point.size()
-            self.encoder_z0.last_yi = torch.zeros(n_trajs, n_samples, n_dims * 2).to(self.device)
-            self.encoder_z0.last_yi_std = torch.zeros(n_trajs, n_samples, n_dims * 2).to(self.device)
+            self.encoder_z0.last_yi = torch.ones(n_trajs, n_samples, n_dims * 2).to(self.device) * 1e-2
+            self.encoder_z0.last_yi_std = torch.ones(n_trajs, n_samples, n_dims * 2).to(self.device) * 1e-2
         # else:
             # FIXME: Set latent state to zero, what is the latent space when sampling prior?
             # h_0_mean, h_0_stdv = self.encoder_z0.last_yi.clone(), self.encoder_z0.last_yi_std.clone()
