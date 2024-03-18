@@ -304,8 +304,8 @@ class Visualizations():
 
         ax.contourf(xx, yy, density_grid, cmap=cmap2, alpha=0.3)
 
-    def draw_all_plots_one_dim(self, data_dict, model,
-                 plot_name="", save=False, save_dir=None, experimentID=0.):
+    def draw_all_plots_one_dim(self, data_dict, model, 
+							   plot_name="", save=False, save_dir=None, experimentID=0.):
 
         data = data_dict["data_to_predict"]
         time_steps = data_dict["tp_to_predict"]
