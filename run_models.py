@@ -90,6 +90,7 @@ parser.add_argument('--max-t',  type=float, default=5., help="We subsample point
 parser.add_argument('--noise-weight', type=float, default=0.01, help="Noise amplitude for generated traejctories")
 # Re-encode every, if -1, do not re-encode
 parser.add_argument('--re-encode', type=int, default=0, help="Re-encode every n-th time points during inference")
+parser.add_argument('--reconstruct-from-latent', action='store_true', help="Reconstruct the trajectory from the RNN latent state")
 
 
 args = parser.parse_args()
@@ -224,7 +225,7 @@ if __name__ == '__main__':
 	elif args.latent_ode:
 		model = create_LatentODE_model(args, input_dim, z0_prior, obsrv_std, device, 
 			classif_per_tp = classif_per_tp,
-			n_labels = n_labels)
+			n_labels = n_labels, reconstruct_from_latent=args.reconstruct_from_latent)
 	else:
 		raise Exception("Model not specified")
 

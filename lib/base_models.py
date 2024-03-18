@@ -179,7 +179,8 @@ class VAE_Baseline(nn.Module):
                  use_poisson_proc=False,
                  linear_classifier=False,
                  n_labels=1,
-                 train_classif_w_reconstr=False):
+                 train_classif_w_reconstr=False,
+                 reconstruct_from_latent=False):
 
         super(VAE_Baseline, self).__init__()
 
@@ -196,6 +197,8 @@ class VAE_Baseline(nn.Module):
         self.use_poisson_proc = use_poisson_proc
         self.linear_classifier = linear_classifier
         self.train_classif_w_reconstr = train_classif_w_reconstr
+
+        self.reconstruct_from_latent = reconstruct_from_latent
 
         z0_dim = latent_dim
         if use_poisson_proc:
@@ -243,7 +246,7 @@ class VAE_Baseline(nn.Module):
         # shape: [1]
         return torch.mean(log_density_data)
 
-    def compute_all_losses(self, batch_dict, n_traj_samples=1, kl_coef=-1, reconstruct_from_latent=False):
+    def compute_all_losses(self, batch_dict, n_traj_samples=1, kl_coef=-1):
         # Condition on subsampled points
         # Make predictions for all the points
         pred_y, info = self.get_reconstruction(batch_dict["tp_to_predict"],
@@ -253,7 +256,7 @@ class VAE_Baseline(nn.Module):
                                                run_backwards=batch_dict["run_backwards"])
 
         # print("get_reconstruction done -- computing likelihood")
-        if reconstruct_from_latent:
+        if self.reconstruct_from_latent:
             z_mu = info["z_mu"]
             z_std = info['z_std']
             kldiv_z0 = 0
@@ -295,7 +298,7 @@ class VAE_Baseline(nn.Module):
             mask=batch_dict["mask_predicted_data"])
 
         # Compute alignment and reconstruction loss
-        if reconstruct_from_latent:
+        if self.reconstruct_from_latent:
             predicted_latents = info['latent_traj']
             latents_zs = info["latent_traj_encoder"]
             reconstructed_x = info['reconstructed_traj_encoder']
@@ -327,10 +330,10 @@ class VAE_Baseline(nn.Module):
                     mask=batch_dict["mask_predicted_data"])
 
         # IWAE loss
-        if reconstruct_from_latent:
+        if self.reconstruct_from_latent:
             loss = mse + mse_recons_loss + mse_alignment_loss + kldiv_z0
         else:
-            loss = - torch.logsumexp(rec_likelihood - kl_coef * kldiv_z0, 0) + mse_recons_loss + mse_alignment_loss
+            loss = - torch.logsumexp(rec_likelihood - kl_coef * kldiv_z0, 0)
 
         if torch.isnan(loss):
             loss = - torch.mean(rec_likelihood - kl_coef * kldiv_z0, 0)
@@ -348,7 +351,7 @@ class VAE_Baseline(nn.Module):
         results["loss"] = torch.mean(loss)
         results["likelihood"] = torch.mean(rec_likelihood).detach()
         results["mse"] = torch.mean(mse).detach()
-        if reconstruct_from_latent:
+        if self.reconstruct_from_latent:
             results["mse_alignment"] = torch.mean(mse_alignment_loss).detach()
             results["mse_reconstruction"] = torch.mean(mse_recons_loss).detach()
         results["pois_likelihood"] = torch.mean(pois_log_likelihood).detach()
