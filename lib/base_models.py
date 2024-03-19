@@ -331,7 +331,7 @@ class VAE_Baseline(nn.Module):
 
         # IWAE loss
         if self.reconstruct_from_latent:
-            loss = mse + mse_recons_loss + mse_alignment_loss + kldiv_z0
+            loss = mse + mse_recons_loss + mse_alignment_loss + kl_coef * kldiv_z0
         else:
             loss = - torch.logsumexp(rec_likelihood - kl_coef * kldiv_z0, 0)
 
