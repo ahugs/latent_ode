@@ -29,6 +29,7 @@ from torch.distributions.normal import Normal
 from lib.latent_ode import LatentODE
 
 from lib.likelihood_eval import masked_gaussian_log_density
+from sklearn.decomposition import PCA
 
 try:
     import umap
@@ -63,7 +64,7 @@ def plot_trajectories(ax, traj, time_steps, min_y=None, max_y=None, title="",
     # The function will produce one line per trajectory (n_traj lines in total)
     if not add_to_plot:
         ax.cla()
-    ax.set_title(title)
+    ax.set_title(title, pad=20)
     ax.set_xlabel('Time')
     ax.set_ylabel('x')
 
@@ -83,7 +84,7 @@ def plot_trajectories(ax, traj, time_steps, min_y=None, max_y=None, title="",
         ax.plot(ts, d, linestyle=linestyle, label=label, marker=marker, color=color, linewidth=linewidth)
 
     if add_legend:
-        ax.legend()
+        ax.legend(loc="upper right")
 
 
 def plot_std(ax, traj, traj_std, time_steps, min_y=None, max_y=None, title="",
@@ -97,7 +98,7 @@ def plot_std(ax, traj, traj_std, time_steps, min_y=None, max_y=None, title="",
                         alpha=alpha, color=color)
 
 
-def plot_vector_field(ax, odefunc, latent_dim, device):
+def plot_vector_field(ax, odefunc, latent_dim, device, dims_to_plot=(0, 1)):
     # Code borrowed from https://github.com/rtqichen/ffjord/blob/29c016131b702b307ceb05c70c74c6e802bb8a44/diagnostics/viz_toy.py
     K = 13j
     y, x = np.mgrid[-6:6:K, -6:6:K]
@@ -105,7 +106,10 @@ def plot_vector_field(ax, odefunc, latent_dim, device):
     zs = torch.from_numpy(np.stack([x, y], -1).reshape(K * K, 2)).to(device, torch.float32)
     if latent_dim > 2:
         # Plots dimensions 0 and 2
-        zs = torch.cat((zs, torch.zeros(K * K, latent_dim - 2, device=device)), 1)
+        temp = zs
+        zs = torch.zeros(K * K, latent_dim, device=device)
+        zs[:, dims_to_plot] = temp
+        # zs = torch.cat((zs, torch.zeros(K * K, latent_dim - 2, device=device)), 1)
     dydt = odefunc(0, zs)
     dydt = -dydt.cpu().detach().numpy()
     if latent_dim > 2:
@@ -153,14 +157,14 @@ def add_white(cmap):
     return cmap
 
 
-class Visualizations():
+class Visualizations:
     def __init__(self, device):
         self.init_visualization()
         init_fonts(SMALL_SIZE)
         self.device = device
 
     def init_visualization(self):
-        self.fig = plt.figure(figsize=(12, 7), facecolor='white')
+        self.fig = plt.figure(figsize=(12, 8), facecolor='white')
 
         self.ax_traj = []
         for i in range(1, 4):
@@ -176,6 +180,18 @@ class Visualizations():
         self.ax_traj_from_prior = self.fig.add_subplot(2, 3, 6, frameon=False)
 
         self.plot_limits = {}
+
+        # Define individual plots for each of the main plots
+        self.fig_trajs_solo, self.ax_trajs_solo = plt.subplots(1, 3, figsize=(12, 4), facecolor='white', frameon=False)
+        self.fig_latent_solo, self.ax_latent_solo = plt.subplots(1, 1, figsize=(7, 7), facecolor='white', frameon=False)
+        self.fig_field_solo, self.ax_field_solo = plt.subplots(1, 1, figsize=(7, 7), facecolor='white', frameon=False)
+        self.fig_traj_prior_solo, self.ax_traj_prior_solo = plt.subplots(1, 1, figsize=(7, 7), facecolor='white', frameon=False)
+        # Grid of field plots
+        self.fig_fields_grid, self.ax_fields_grid = plt.subplots(1, 5, figsize=(16, 4), facecolor='white', frameon=False)
+        # PCA projection latent trajs
+        self.fig_latent_pca, self.ax_latent_pca = plt.subplots(1, 4, figsize=(16, 4), facecolor='white', frameon=False)
+        # PCA projection memory state
+        self.fig_memory_pca, self.ax_memory_pca = plt.subplots(1, 4, figsize=(16, 4), facecolor='white', frameon=False)
         plt.show(block=False)
 
     def set_plot_lims(self, ax, name):
@@ -347,31 +363,37 @@ class Visualizations():
 
         cmap = plt.cm.get_cmap('Set1')
         for traj_id in range(3):
-            # Plot observations
-            plot_trajectories(self.ax_traj[traj_id],
-                              data_for_plotting[traj_id].unsqueeze(0), observed_time_steps,
-                              mask=mask_for_plotting[traj_id].unsqueeze(0),
-                              min_y=min_y, max_y=max_y,  # title="True trajectories",
-                              marker='o', linestyle='', dim_to_show=dim_to_show,
-                              color=cmap(2))
-            # Plot prediction values - TODO, only plot in extrap mode
-            plot_trajectories(self.ax_traj[traj_id],
-                              data[:n_traj_to_show][traj_id].unsqueeze(0), time_steps,
-                              mask=torch.ones_like(data[:n_traj_to_show][traj_id].unsqueeze(0)),
-                              min_y=min_y, max_y=max_y,  # title="True trajectories",
-                              marker='o', linestyle='', dim_to_show=dim_to_show,
-                              color=cmap(4), add_to_plot=True)
-            # Plot reconstructions
-            plot_trajectories(self.ax_traj[traj_id],
-                              reconstructions_for_plotting[traj_id].unsqueeze(0), time_steps_to_predict,
-                              min_y=min_y, max_y=max_y, title="Sample {} (data space)".format(traj_id),
-                              dim_to_show=dim_to_show,
-                              add_to_plot=True, marker='', color=cmap(3), linewidth=3)
-            # Plot variance estimated over multiple samples from approx posterior
-            plot_std(self.ax_traj[traj_id],
-                     reconstructions_for_plotting[traj_id].unsqueeze(0), reconstr_std[traj_id].unsqueeze(0),
-                     time_steps_to_predict, alpha=0.5, color=cmap(3))
-            self.set_plot_lims(self.ax_traj[traj_id], "traj_" + str(traj_id))
+            ax = [self.ax_traj[traj_id], self.ax_trajs_solo[traj_id]]
+            for i in range(2):
+                # Plot observations
+                plot_trajectories(ax[i],
+                                  data_for_plotting[traj_id].unsqueeze(0), observed_time_steps,
+                                  mask=mask_for_plotting[traj_id].unsqueeze(0),
+                                  min_y=min_y, max_y=max_y,  # title="True trajectories",
+                                  marker='o', linestyle='', dim_to_show=dim_to_show,
+                                  color=cmap(1), label=r"$x_{0:T}$", add_legend=True)
+                reconstruction_text = r"$\hat{x}_{0:T}$"
+                # Plot prediction values
+                if data_dict["mode"] == "extrap":
+                    reconstruction_text = r"$\hat{x}_{0:T+M}$"
+                    plot_trajectories(ax[i],
+                                      data[:n_traj_to_show][traj_id].unsqueeze(0), time_steps,
+                                      mask=torch.ones_like(data[:n_traj_to_show][traj_id].unsqueeze(0)),
+                                      min_y=min_y, max_y=max_y,  # title="True trajectories",
+                                      marker='o', linestyle='', dim_to_show=dim_to_show,
+                                      color=cmap(2), add_to_plot=True, label=r"$x_{T:T+N}$", add_legend=True)
+                # Plot reconstructions
+                plot_trajectories(ax[i],
+                                  reconstructions_for_plotting[traj_id].unsqueeze(0), time_steps_to_predict,
+                                  min_y=min_y, max_y=max_y, title="Sample {} (data space)".format(traj_id),
+                                  dim_to_show=dim_to_show,
+                                  add_to_plot=True, marker='', color=cmap(3), linewidth=3, label=reconstruction_text,
+                                  add_legend=True)
+                # Plot variance estimated over multiple samples from approx posterior
+                plot_std(ax[i],
+                         reconstructions_for_plotting[traj_id].unsqueeze(0), reconstr_std[traj_id].unsqueeze(0),
+                         time_steps_to_predict, alpha=0.5, color=cmap(3))
+                self.set_plot_lims(ax[i], "traj_" + str(traj_id))
 
         # Plot true posterior and approximate posterior
         # self.draw_one_density_plot(self.ax_density[traj_id],
@@ -404,9 +426,10 @@ class Visualizations():
             # Since in this case n_traj = 1, n_traj_samples -- requested number of samples from the prior, squeeze n_traj dimension
             traj_from_prior = traj_from_prior.squeeze(1)
 
-            plot_trajectories(self.ax_traj_from_prior, traj_from_prior, time_steps_to_predict,
-                              marker='', linewidth=3)
-            self.ax_traj_from_prior.set_title("Samples from prior (data space)", pad=20)
+            for ax in [self.ax_traj_from_prior, self.ax_traj_prior_solo]:
+                plot_trajectories(ax, traj_from_prior, time_steps_to_predict,
+                                  marker='', linewidth=3)
+                ax.set_title("Samples from prior (data space)", pad=20)
         # self.set_plot_lims(self.ax_traj_from_prior, "traj_from_prior")
         ################################################
 
@@ -424,11 +447,17 @@ class Visualizations():
 
         ################################################
         # Show vector field
-        self.ax_vector_field.cla()
-        plot_vector_field(self.ax_vector_field, model.diffeq_solver.ode_func, model.latent_dim, device)
-        self.ax_vector_field.set_title("Slice of vector field (latent space)", pad=20)
-        self.set_plot_lims(self.ax_vector_field, "vector_field")
+        for ax in [self.ax_vector_field, self.ax_field_solo]:
+            ax.cla()
+            plot_vector_field(ax, model.diffeq_solver.ode_func, model.latent_dim, device, dims_to_plot=(0, 1))
+            ax.set_title(r"Slice of vector field $z_{0:1}$ (latent space)", pad=20)
+            self.set_plot_lims(ax, "vector_field")
         # self.ax_vector_field.set_ylim((-0.5, 1.5))
+        for ax, dims in zip(self.ax_fields_grid, range(0, 10, 2)):
+            ax.cla()
+            plot_vector_field(ax, model.diffeq_solver.ode_func, model.latent_dim, device, dims_to_plot=(dims, dims + 1))
+            ax.set_title(rf"Slice of vector field $z_{{{dims}:{dims+1}}}$", pad=20)
+            self.set_plot_lims(ax, "grid_vector_fields")
 
         ################################################
         # Plot trajectories in the latent space
@@ -440,26 +469,143 @@ class Visualizations():
         # shape before permute: [1, n_tp, n_latent_dims]
 
         self.ax_latent_traj.cla()
+        self.ax_latent_solo.cla()
         cmap = plt.cm.get_cmap('Accent')
         n_latent_dims = latent_traj.size(-1)
 
         custom_labels = {}
-        for i in range(n_latent_dims):
+        for ax in [self.ax_latent_traj, self.ax_latent_solo]:
+            for i in range(n_latent_dims):
+                col = cmap(i)
+                plot_trajectories(ax, latent_traj, time_steps_to_predict,
+                                  title=r"Latent trajectories $z(t)$ (latent space)", dim_to_show=i, color=col,
+                                  marker='', add_to_plot=True,
+                                  linewidth=3)
+                custom_labels['dim ' + str(i)] = Line2D([0], [0], color=col)
+
+            ax.set_ylabel("z")
+            ax.set_title(r"Latent trajectories $z(t)$ (latent space)", pad=20)
+            ax.legend(custom_labels.values(), custom_labels.keys(), loc='lower left')
+            self.set_plot_lims(ax, "latent_traj")
+
+        # Plot latent trajectories PCA projection and analyze it
+        self.ax_latent_pca[0].cla()
+        self.ax_latent_pca[1].cla()
+        self.ax_latent_pca[2].cla()
+        self.ax_latent_pca[3].cla()
+        # PCA projection latent trajectories
+        mean_latent_traj = info["latent_traj"].mean(0)
+        n_trajs, seq_len = mean_latent_traj.size(0), mean_latent_traj.size(1)
+        mean_latent_traj = mean_latent_traj.view(n_trajs * seq_len, -1).cpu().numpy()
+        pca = PCA(n_components=10)
+        pca.fit(mean_latent_traj)
+        latent_traj_pca = pca.transform(mean_latent_traj)
+        latent_traj_pca = torch.from_numpy(latent_traj_pca.reshape(n_trajs, seq_len, -1))
+        # Plot only five latent trajs
+        custom_labels = {}
+        for i in range(3):
             col = cmap(i)
-            plot_trajectories(self.ax_latent_traj, latent_traj, time_steps_to_predict,
-                              title="Latent trajectories z(t) (latent space)", dim_to_show=i, color=col,
+            # Plot first and second components
+            plot_trajectories(self.ax_latent_pca[0], latent_traj_pca[i, :, 0][None, :, None], time_steps_to_predict,
+                              title=r"First component $z(t)$", color=col,
                               marker='', add_to_plot=True,
                               linewidth=3)
-            custom_labels['dim ' + str(i)] = Line2D([0], [0], color=col)
+            plot_trajectories(self.ax_latent_pca[1], latent_traj_pca[i, :, 1][None, :, None], time_steps_to_predict,
+                              title=r"Second component $z(t)$", color=col,
+                              marker='', add_to_plot=True,
+                              linewidth=3)
+            # Plot first 2 dimensions
+            self.ax_latent_pca[2].plot(latent_traj_pca[i, :, 0], latent_traj_pca[i, :, 1], color=col, lw=3)
+            custom_labels['traj ' + str(i)] = Line2D([0], [0], color=col)
 
-        self.ax_latent_traj.set_ylabel("z")
-        self.ax_latent_traj.set_title("Latent trajectories z(t) (latent space)", pad=20)
-        self.ax_latent_traj.legend(custom_labels.values(), custom_labels.keys(), loc='lower left')
-        self.set_plot_lims(self.ax_latent_traj, "latent_traj")
+        self.ax_latent_pca[0].set_ylabel("z")
+        self.ax_latent_pca[0].set_title(r"First component $z(t)$", pad=20)
+        self.ax_latent_pca[0].legend(custom_labels.values(), custom_labels.keys(), loc='lower left')
+        # self.set_plot_lims(self.ax_latent_pca[0], "latent_pca")
+
+        self.ax_latent_pca[1].set_ylabel("z")
+        self.ax_latent_pca[1].set_title(r"Second component $z(t)$", pad=20)
+        self.ax_latent_pca[1].legend(custom_labels.values(), custom_labels.keys(), loc='lower left')
+        # self.set_plot_lims(self.ax_latent_pca[0], "latent_pca")
+
+        self.ax_latent_pca[2].set_xlabel("First component")
+        self.ax_latent_pca[2].set_ylabel("Second component")
+        self.ax_latent_pca[2].set_title(r"Two components of $z(t)$", pad=20)
+        self.ax_latent_pca[2].legend(custom_labels.values(), custom_labels.keys(), loc='lower left')
+        # self.set_plot_lims(self.ax_latent_pca[1], "latent_pca_2d")
+        # PCA explained variance plot
+        self.ax_latent_pca[3].cla()
+        self.ax_latent_pca[3].plot(pca.explained_variance_ratio_.cumsum(), 'k.')
+        self.ax_latent_pca[3].plot([0, pca.n_components], [1, 1], 'k--')
+        self.ax_latent_pca[3].set_xlabel('Number of components')
+        self.ax_latent_pca[3].set_ylabel('variance explained ratio')
+        self.ax_latent_pca[3].set_title('Cumulative variance explained', pad=20)
+        # self.set_plot_lims(self.ax_latent_pca[2], "latent_pca_explained_var")
+
+        # Plot memory state PCA projection and analyze it
 
         ################################################
+        self.ax_memory_pca[0].cla()
+        self.ax_memory_pca[1].cla()
+        self.ax_memory_pca[2].cla()
+        self.ax_memory_pca[3].cla()
+        # PCA projection latent trajectories
+        memory_states = info["memory_state"].squeeze().permute(1,0,2)
+        n_trajs, seq_len = memory_states.size(0), memory_states.size(1)
+        memory_states = memory_states.reshape(n_trajs * seq_len, -1).cpu().numpy()
+        pca = PCA(n_components=10)
+        pca.fit(memory_states)
+        memory_states_pca = pca.transform(memory_states)
+        memory_states_pca = torch.from_numpy(memory_states_pca.reshape(n_trajs, seq_len, -1))
+        # Plot only five latent trajs
+        custom_labels = {}
+        for i in range(3):
+            col = cmap(i)
+            # Plot first and second components
+            plot_trajectories(self.ax_memory_pca[0], memory_states_pca[i, :, 0][None, :, None], time_steps_to_predict,
+                              title=r"First component $h(t)$", color=col,
+                              marker='', add_to_plot=True,
+                              linewidth=3)
+            plot_trajectories(self.ax_memory_pca[1], memory_states_pca[i, :, 1][None, :, None], time_steps_to_predict,
+                              title=r"Second component $h(t)$", color=col,
+                              marker='', add_to_plot=True,
+                              linewidth=3)
+            # Plot first 2 dimensions
+            self.ax_memory_pca[2].plot(memory_states_pca[i, :, 0], memory_states_pca[i, :, 1], color=col, lw=3)
+            custom_labels['traj ' + str(i)] = Line2D([0], [0], color=col)
+
+        self.ax_memory_pca[0].set_ylabel("h")
+        self.ax_memory_pca[0].set_title(r"First component $h(t)$", pad=20)
+        self.ax_memory_pca[0].legend(custom_labels.values(), custom_labels.keys(), loc='lower left')
+        # self.set_plot_lims(self.ax_memory_pca[0], "latent_pca")
+
+        self.ax_memory_pca[1].set_ylabel("h")
+        self.ax_memory_pca[1].set_title(r"Second component $h(t)$", pad=20)
+        self.ax_memory_pca[1].legend(custom_labels.values(), custom_labels.keys(), loc='lower left')
+        # self.set_plot_lims(self.ax_memory_pca[0], "latent_pca")
+
+        self.ax_memory_pca[2].set_xlabel("First component")
+        self.ax_memory_pca[2].set_ylabel("Second component")
+        self.ax_memory_pca[2].set_title(r"Two components of $h(t)$", pad=20)
+        self.ax_memory_pca[2].legend(custom_labels.values(), custom_labels.keys(), loc='lower left')
+        # self.set_plot_lims(self.ax_memory_pca[1], "latent_pca_2d")
+        # PCA explained variance plot
+        self.ax_memory_pca[3].cla()
+        self.ax_memory_pca[3].plot(pca.explained_variance_ratio_.cumsum(), 'k.')
+        self.ax_memory_pca[3].plot([0, pca.n_components], [1, 1], 'k--')
+        self.ax_memory_pca[3].set_xlabel('Number of components')
+        self.ax_memory_pca[3].set_ylabel('variance explained ratio')
+        self.ax_memory_pca[3].set_title('Cumulative variance explained', pad=20)
+        # self.set_plot_lims(self.ax_memory_pca[2], "latent_pca_explained_var")
 
         self.fig.tight_layout()
+        self.fig_trajs_solo.tight_layout()
+        self.fig_traj_prior_solo.tight_layout()
+        self.fig_field_solo.tight_layout()
+        self.fig_latent_solo.tight_layout()
+        self.fig_fields_grid.tight_layout()
+        self.fig_latent_pca.tight_layout()
+        self.fig_memory_pca.tight_layout()
         plt.draw()
 
         if save:
@@ -469,3 +615,10 @@ class Visualizations():
                 dirname = "plots/" + str(experimentID) + "/"
             os.makedirs(dirname, exist_ok=True)
             self.fig.savefig(dirname + plot_name)
+            self.fig_trajs_solo.savefig(dirname + '_'.join(["trajs"] + plot_name.split('_')[-2:]))
+            self.fig_traj_prior_solo.savefig(dirname + '_'.join(["trajs_prior"] + plot_name.split('_')[-2:]))
+            self.fig_field_solo.savefig(dirname + '_'.join(["field"] + plot_name.split('_')[-2:]))
+            self.fig_latent_solo.savefig(dirname + '_'.join(["trajs_latent"] + plot_name.split('_')[-2:]))
+            self.fig_fields_grid.savefig(dirname + '_'.join(["fields_grid"] + plot_name.split('_')[-2:]))
+            self.fig_latent_pca.savefig(dirname + '_'.join(["latent_pca"] + plot_name.split('_')[-2:]))
+            self.fig_memory_pca.savefig(dirname + '_'.join(["memory_pca"] + plot_name.split('_')[-2:]))
