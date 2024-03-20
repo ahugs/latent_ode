@@ -249,7 +249,7 @@ class Encoder_z0_ODE_RNN(nn.Module):
         if save_info:
             self.extra_info = extra_info
 
-        return mean_z0, std_z0, mean_z, std_z
+        return mean_z0, std_z0, mean_z, std_z, latent_ys
 
     def run_odernn(self, data, time_steps,
                    run_backwards=True, save_info=False, use_last_state = False):

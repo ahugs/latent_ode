@@ -58,7 +58,7 @@ class LatentODE(VAE_Baseline):
             truth_w_mask = truth
             if mask is not None:
                 truth_w_mask = torch.cat((truth, mask), -1)
-            first_point_mu, first_point_std, z_mu, z_std = self.encoder_z0(
+            first_point_mu, first_point_std, z_mu, z_std, latent_ys = self.encoder_z0(
                 truth_w_mask, truth_time_steps, run_backwards=run_backwards)
             
 
@@ -116,7 +116,8 @@ class LatentODE(VAE_Baseline):
             "z_std": z_std,
             "latent_traj": sol_y,
             "latent_traj_encoder": latents_zs,
-            "reconstructed_traj_encoder": reconstructed_x
+            "reconstructed_traj_encoder": reconstructed_x,
+            "memory_state": latent_ys
         }
 
         if self.use_poisson_proc:
