@@ -499,29 +499,30 @@ class Visualizations:
         # PCA projection latent trajectories
         mean_latent_traj = info["latent_traj"].mean(0)
         n_trajs, seq_len = mean_latent_traj.size(0), mean_latent_traj.size(1)
-        mean_latent_traj = mean_latent_traj.view(n_trajs * seq_len, -1).cpu().numpy()
+        # mean_latent_traj = mean_latent_traj.view(n_trajs * seq_len, -1).cpu().numpy()
+        mean_latent_traj = mean_latent_traj.cpu().numpy()
         # Normalize data
         n_dims = mean_latent_traj.shape[-1]
         scaler = StandardScaler()
-        mean_latent_traj = scaler.fit_transform(mean_latent_traj)
         pca = PCA(n_components=n_dims)
-        pca.fit(mean_latent_traj)
-        latent_traj_pca = pca.transform(mean_latent_traj)
-        latent_traj_pca = torch.from_numpy(latent_traj_pca.reshape(n_trajs, seq_len, -1))
+        # latent_traj_pca = torch.from_numpy(latent_traj_pca.reshape(n_trajs, seq_len, -1))
         # Plot only five latent trajs
         custom_labels = {}
         for i in range(3):
             col = cmap(i)
+            sample_latent_traj = scaler.fit_transform(mean_latent_traj[i])
+            sample_latent_traj_pca = pca.fit_transform(sample_latent_traj)
+            sample_latent_traj_pca = torch.from_numpy(sample_latent_traj_pca)
             # Plot first and second components
-            plot_trajectories(self.ax_latent_pca[0], latent_traj_pca[i, :, 0][None, :, None], time_steps_to_predict,
+            plot_trajectories(self.ax_latent_pca[0], sample_latent_traj_pca[:, 0][None, :, None], time_steps_to_predict,
                               title=r"First component $z(t)$", color=col,
                               marker='', add_to_plot=True,
                               linewidth=3)
-            plot_trajectories(self.ax_latent_pca[1], latent_traj_pca[i, :, 1][None, :, None], time_steps_to_predict,
+            plot_trajectories(self.ax_latent_pca[1], sample_latent_traj_pca[:, 1][None, :, None], time_steps_to_predict,
                               title=r"Second component $z(t)$", color=col,
                               marker='', add_to_plot=True,
                               linewidth=3)
-            plot_trajectories(self.ax_latent_pca[2], latent_traj_pca[i, :, 2][None, :, None], time_steps_to_predict,
+            plot_trajectories(self.ax_latent_pca[2], sample_latent_traj_pca[:, 2][None, :, None], time_steps_to_predict,
                               title=r"Third component $z(t)$", color=col,
                               marker='', add_to_plot=True,
                               linewidth=3)
@@ -532,16 +533,17 @@ class Visualizations:
         self.ax_latent_pca[0].set_ylabel("z")
         self.ax_latent_pca[0].set_title(r"First component $z(t)$", pad=20)
         self.ax_latent_pca[0].legend(custom_labels.values(), custom_labels.keys(), loc='lower left')
-        # self.set_plot_lims(self.ax_latent_pca[0], "latent_pca")
+        # self.set_plot_lims(self.ax_latent_pca[0], "latent_pca_1")
 
         self.ax_latent_pca[1].set_ylabel("z")
         self.ax_latent_pca[1].set_title(r"Second component $z(t)$", pad=20)
         self.ax_latent_pca[1].legend(custom_labels.values(), custom_labels.keys(), loc='lower left')
-        # self.set_plot_lims(self.ax_latent_pca[0], "latent_pca")
+        # self.set_plot_lims(self.ax_latent_pca[1], "latent_pca_2")
 
         self.ax_latent_pca[2].set_ylabel("z")
         self.ax_latent_pca[2].set_title(r"Third component $z(t)$", pad=20)
         self.ax_latent_pca[2].legend(custom_labels.values(), custom_labels.keys(), loc='lower left')
+        # self.set_plot_lims(self.ax_latent_pca[2], "latent_pca_3")
         # self.ax_latent_pca[2].set_xlabel("First component")
         # self.ax_latent_pca[2].set_ylabel("Second component")
         # self.ax_latent_pca[2].set_title(r"Two components of $z(t)$", pad=20)
@@ -554,7 +556,7 @@ class Visualizations:
         self.ax_latent_pca[3].set_xlabel('Number of components')
         self.ax_latent_pca[3].set_ylabel('variance explained ratio')
         self.ax_latent_pca[3].set_title('Cumulative variance explained', pad=20)
-        # self.set_plot_lims(self.ax_latent_pca[2], "latent_pca_explained_var")
+        self.set_plot_lims(self.ax_latent_pca[3], "latent_pca_explained_var")
 
         # Plot memory state PCA projection and analyze it
 
@@ -566,29 +568,30 @@ class Visualizations:
         # PCA projection latent trajectories
         memory_states = info["memory_state"].squeeze().permute(1, 0, 2)
         n_trajs, seq_len = memory_states.size(0), memory_states.size(1)
-        memory_states = memory_states.reshape(n_trajs * seq_len, -1).cpu().numpy()
+        # memory_states = memory_states.reshape(n_trajs * seq_len, -1).cpu().numpy()
+        memory_states = memory_states.cpu().numpy()
         # Normalize data
-        n_dims = memory_states.shape[-1]
+        n_dims = mean_latent_traj.shape[-1]
         scaler = StandardScaler()
-        memory_states = scaler.fit_transform(memory_states)
         pca = PCA(n_components=n_dims)
-        pca.fit(memory_states)
-        memory_states_pca = pca.transform(memory_states)
-        memory_states_pca = torch.from_numpy(memory_states_pca.reshape(n_trajs, seq_len, -1))
+        # memory_states_pca = torch.from_numpy(memory_states_pca.reshape(n_trajs, seq_len, -1))
         # Plot only five latent trajs
         custom_labels = {}
         for i in range(3):
             col = cmap(i)
+            sample_memory_state = scaler.fit_transform(memory_states[i])
+            sample_memory_state_pca = pca.fit_transform(sample_memory_state)
+            sample_memory_state_pca = torch.from_numpy(sample_memory_state_pca)
             # Plot first and second components
-            plot_trajectories(self.ax_memory_pca[0], memory_states_pca[i, :, 0][None, :, None], time_steps_to_predict,
+            plot_trajectories(self.ax_memory_pca[0], sample_memory_state_pca[:, 0][None, :, None], time_steps_to_predict,
                               title=r"First component $h(t)$", color=col,
                               marker='', add_to_plot=True,
                               linewidth=3)
-            plot_trajectories(self.ax_memory_pca[1], memory_states_pca[i, :, 1][None, :, None], time_steps_to_predict,
+            plot_trajectories(self.ax_memory_pca[1], sample_memory_state_pca[:, 1][None, :, None], time_steps_to_predict,
                               title=r"Second component $h(t)$", color=col,
                               marker='', add_to_plot=True,
                               linewidth=3)
-            plot_trajectories(self.ax_memory_pca[2], memory_states_pca[i, :, 2][None, :, None], time_steps_to_predict,
+            plot_trajectories(self.ax_memory_pca[2], sample_memory_state_pca[:, 2][None, :, None], time_steps_to_predict,
                               title=r"Third component $h(t)$", color=col,
                               marker='', add_to_plot=True,
                               linewidth=3)
