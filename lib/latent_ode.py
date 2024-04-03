@@ -49,7 +49,7 @@ class LatentODE(VAE_Baseline):
         self.decoder = decoder
         self.use_poisson_proc = use_poisson_proc
 
-    def get_reconstruction(self, time_steps_to_predict, truth, truth_time_steps,
+    def get_reconstruction(self, time_steps_to_predict, truth, truth_time_steps, truth_to_predict = None,
                            mask=None, n_traj_samples=1, run_backwards=True, mode=None, re_encode=0):
 
         if isinstance(self.encoder_z0, Encoder_z0_ODE_RNN) or \
@@ -60,15 +60,20 @@ class LatentODE(VAE_Baseline):
                 truth_w_mask = torch.cat((truth, mask), -1)
             first_point_mu, first_point_std, z_mu, z_std, latent_ys = self.encoder_z0(
                 truth_w_mask, truth_time_steps, run_backwards=run_backwards)
-            
-
+            # Make clone of latest memory state for re-encode step
+            last_yi, last_yi_std = self.encoder_z0.last_yi.clone(), self.encoder_z0.last_yi_std.clone()
+            # If extrapolation mode, we forward the "to-predict" time points to the encoder
+            if mode == "extrap":
+                truth_w_mask2predict = torch.cat((truth_to_predict, torch.ones_like(truth_to_predict)), -1)
+                # z_mu, z_std and latent_ys is replaced by the extrap states
+                _, _, z_mu, z_std, latent_ys = self.encoder_z0(
+                    truth_w_mask2predict, time_steps_to_predict, run_backwards=run_backwards, use_last_state=True)
 
             means_z0 = first_point_mu.repeat(n_traj_samples, 1, 1)
             sigma_z0 = first_point_std.repeat(n_traj_samples, 1, 1)
             first_point_enc = utils.sample_standard_gaussian(means_z0, sigma_z0)
 
-
-            latents_zs = utils.sample_standard_gaussian(z_mu.repeat(n_traj_samples, 1, 1, 1), 
+            latents_zs = utils.sample_standard_gaussian(z_mu.repeat(n_traj_samples, 1, 1, 1),
                                                         z_std.repeat(n_traj_samples, 1, 1, 1))
 
         else:

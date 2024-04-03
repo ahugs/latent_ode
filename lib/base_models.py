@@ -251,6 +251,7 @@ class VAE_Baseline(nn.Module):
         # Make predictions for all the points
         pred_y, info = self.get_reconstruction(batch_dict["tp_to_predict"],
                                                batch_dict["observed_data"], batch_dict["observed_tp"],
+                                               truth_to_predict=batch_dict["data_to_predict"],
                                                mask=batch_dict["observed_mask"], n_traj_samples=n_traj_samples,
                                                mode=batch_dict["mode"], re_encode=batch_dict["re_encode"],
                                                run_backwards=batch_dict["run_backwards"])

@@ -337,11 +337,13 @@ class Visualizations:
         device = get_device(time_steps)
 
         time_steps_to_predict = time_steps
-        if isinstance(model, LatentODE):
+        # FIXME: this breaks the forward mode + re-encoding -- not really important imo, this is just for plotting
+        # if isinstance(model, LatentODE):
             # sample at the original time points
-            time_steps_to_predict = utils.linspace_vector(time_steps[0], time_steps[-1], 100).to(device)
-        reconstructions, info = model.get_reconstruction(time_steps_to_predict,
+            # time_steps_to_predict = utils.linspace_vector(time_steps[0], time_steps[-1], 100).to(device)
+        reconstructions, info = model.get_reconstruction(time_steps, #time_steps_to_predict
                                                          observed_data, observed_time_steps,
+                                                         truth_to_predict=data,
                                                          mask=observed_mask, n_traj_samples=10,
                                                          mode=data_dict["mode"], re_encode=data_dict["re_encode"],
                                                          run_backwards=data_dict["run_backwards"])
@@ -556,7 +558,7 @@ class Visualizations:
         self.ax_latent_pca[3].set_xlabel('Number of components')
         self.ax_latent_pca[3].set_ylabel('variance explained ratio')
         self.ax_latent_pca[3].set_title('Cumulative variance explained', pad=20)
-        self.set_plot_lims(self.ax_latent_pca[3], "latent_pca_explained_var")
+        # self.set_plot_lims(self.ax_latent_pca[3], "latent_pca_explained_var")
 
         # Plot memory state PCA projection and analyze it
 
