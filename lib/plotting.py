@@ -338,10 +338,10 @@ class Visualizations:
 
         time_steps_to_predict = time_steps
         # FIXME: this breaks the forward mode + re-encoding -- not really important imo, this is just for plotting
-        # if isinstance(model, LatentODE):
+        if isinstance(model, LatentODE):
             # sample at the original time points
-            # time_steps_to_predict = utils.linspace_vector(time_steps[0], time_steps[-1], 100).to(device)
-        reconstructions, info = model.get_reconstruction(time_steps, #time_steps_to_predict
+            time_steps_to_predict = utils.linspace_vector(time_steps[0], time_steps[-1], 100).to(device)
+        reconstructions, info = model.get_reconstruction(time_steps_to_predict,
                                                          observed_data, observed_time_steps,
                                                          truth_to_predict=data,
                                                          mask=observed_mask, n_traj_samples=10,
@@ -383,7 +383,6 @@ class Visualizations:
                     reconstruction_text = r"$\hat{x}_{0:T+M}$"
                     plot_trajectories(ax[i],
                                       data[:n_traj_to_show][traj_id].unsqueeze(0), time_steps,
-                                      mask=torch.ones_like(data[:n_traj_to_show][traj_id].unsqueeze(0)),
                                       min_y=min_y, max_y=max_y,  # title="True trajectories",
                                       marker='o', linestyle='', dim_to_show=dim_to_show,
                                       color=cmap(2), add_to_plot=True, label=r"$x_{T:T+N}$", add_legend=True)
@@ -585,15 +584,15 @@ class Visualizations:
             sample_memory_state_pca = pca.fit_transform(sample_memory_state)
             sample_memory_state_pca = torch.from_numpy(sample_memory_state_pca)
             # Plot first and second components
-            plot_trajectories(self.ax_memory_pca[0], sample_memory_state_pca[:, 0][None, :, None], time_steps_to_predict,
+            plot_trajectories(self.ax_memory_pca[0], sample_memory_state_pca[:, 0][None, :, None], observed_time_steps,
                               title=r"First component $h(t)$", color=col,
                               marker='', add_to_plot=True,
                               linewidth=3)
-            plot_trajectories(self.ax_memory_pca[1], sample_memory_state_pca[:, 1][None, :, None], time_steps_to_predict,
+            plot_trajectories(self.ax_memory_pca[1], sample_memory_state_pca[:, 1][None, :, None], observed_time_steps,
                               title=r"Second component $h(t)$", color=col,
                               marker='', add_to_plot=True,
                               linewidth=3)
-            plot_trajectories(self.ax_memory_pca[2], sample_memory_state_pca[:, 2][None, :, None], time_steps_to_predict,
+            plot_trajectories(self.ax_memory_pca[2], sample_memory_state_pca[:, 2][None, :, None], observed_time_steps,
                               title=r"Third component $h(t)$", color=col,
                               marker='', add_to_plot=True,
                               linewidth=3)

@@ -63,7 +63,7 @@ class LatentODE(VAE_Baseline):
             # Make clone of latest memory state for re-encode step
             last_yi, last_yi_std = self.encoder_z0.last_yi.clone(), self.encoder_z0.last_yi_std.clone()
             # If extrapolation mode, we forward the "to-predict" time points to the encoder
-            if mode == "extrap":
+            if mode == "extrap" and self.reconstruct_from_latent:
                 first_point_mu = z_mu[:, -1, :]
                 first_point_std = z_std[:, -1, :]
                 truth_w_mask2predict = torch.cat((truth_to_predict, torch.ones_like(truth_to_predict)), -1)
