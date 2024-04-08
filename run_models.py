@@ -107,6 +107,8 @@ parser.add_argument('--noise-weight', type=float, default=0.01, help="Noise ampl
 parser.add_argument('--re-encode', type=int, default=0, help="Re-encode every n-th time points during inference")
 parser.add_argument('--reconstruct-from-latent', action='store_true',
                     help="Reconstruct the trajectory from the RNN latent state")
+parser.add_argument('--wait-until-kl-inc', type=int, default=10,
+                    help="Epoch to start including KL loss (for VAE models)")
 
 args = parser.parse_args()
 
@@ -117,6 +119,9 @@ utils.makedirs(args.save)
 #####################################################################################################
 
 if __name__ == '__main__':
+
+    assert not args.run_backwards and args.extrap, "Backwards mode is not implemented for extrapolation"
+
     torch.manual_seed(args.random_seed)
     np.random.seed(args.random_seed)
     w_run = wandb.init(project="latent-ode",
@@ -275,7 +280,7 @@ if __name__ == '__main__':
         optimizer.zero_grad()
         utils.update_learning_rate(optimizer, decay_rate=0.999, lowest=args.lr / 10)
 
-        wait_until_kl_inc = 10
+        wait_until_kl_inc = args.wait_until_kl_inc
         if itr // num_batches < wait_until_kl_inc:
             kl_coef = 0.
         else:

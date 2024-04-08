@@ -64,10 +64,12 @@ class LatentODE(VAE_Baseline):
             last_yi, last_yi_std = self.encoder_z0.last_yi.clone(), self.encoder_z0.last_yi_std.clone()
             # If extrapolation mode, we forward the "to-predict" time points to the encoder
             if mode == "extrap":
+                first_point_mu = z_mu[:, -1, :]
+                first_point_std = z_std[:, -1, :]
                 truth_w_mask2predict = torch.cat((truth_to_predict, torch.ones_like(truth_to_predict)), -1)
                 # z_mu, z_std and latent_ys is replaced by the extrap states
                 _, _, z_mu, z_std, latent_ys = self.encoder_z0(
-                    truth_w_mask2predict, time_steps_to_predict, run_backwards=run_backwards, use_last_state=True)
+                    truth_w_mask2predict, time_steps_to_predict, run_backwards=False, use_last_state=True)
 
             means_z0 = first_point_mu.repeat(n_traj_samples, 1, 1)
             sigma_z0 = first_point_std.repeat(n_traj_samples, 1, 1)
