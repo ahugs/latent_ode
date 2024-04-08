@@ -362,10 +362,10 @@ class Visualizations:
         dim_to_show = 0
         max_y = max(
             data_for_plotting[:, :, dim_to_show].cpu().numpy().max(),
-            reconstructions[:, :, dim_to_show].cpu().numpy().max())
+            reconstructions[:, :, dim_to_show].cpu().numpy().max()) + 5.0
         min_y = min(
             data_for_plotting[:, :, dim_to_show].cpu().numpy().min(),
-            reconstructions[:, :, dim_to_show].cpu().numpy().min())
+            reconstructions[:, :, dim_to_show].cpu().numpy().min()) - 1.0
 
         ############################################
         # Plot reconstructions, true postrior and approximate posterior
