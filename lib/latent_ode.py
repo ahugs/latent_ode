@@ -59,33 +59,33 @@ class LatentODE(VAE_Baseline):
             truth_w_mask = truth
             if mask is not None:
                 truth_w_mask = torch.cat((truth, mask), -1)
-            first_point_mu, first_point_std, z_mu, z_std, latent_ys = self.encoder_z0(
+            first_point_mu, first_point_logvar, z_mu, z_logvar, latent_ys = self.encoder_z0(
                 truth_w_mask, truth_time_steps, run_backwards=run_backwards)
             # Make clone of latest memory state for re-encode step
-            last_yi, last_yi_std = self.encoder_z0.last_yi.clone(), self.encoder_z0.last_yi_std.clone()
+            last_yi, last_yi_logvar = self.encoder_z0.last_yi.clone(), self.encoder_z0.last_yi_logvar.clone()
             # If extrapolation mode, we forward the "to-predict" time points to the encoder
-            if mode == "extrap" and self.reconstruct_from_latent:
+            if mode == "extrap":
                 # Pick actual last sample
                 first_point_mu = z_mu[:, -1, :]
-                first_point_std = z_std[:, -1, :]
-                if running_mode == "training":
+                first_point_logvar = z_logvar[:, -1, :]
+                if running_mode == "training" and self.reconstruct_from_latent:
                     truth_w_mask2predict = torch.cat((truth_to_predict, torch.ones_like(truth_to_predict)), -1)
                     # z_mu, z_std and latent_ys is replaced by the extrap states
-                    _, _, z_mu, z_std, latent_ys = self.encoder_z0(
+                    _, _, z_mu, z_logvar, latent_ys = self.encoder_z0(
                         truth_w_mask2predict, time_steps_to_predict, run_backwards=False, use_last_state=True)
 
             means_z0 = first_point_mu.repeat(n_traj_samples, 1, 1)
-            sigma_z0 = first_point_std.repeat(n_traj_samples, 1, 1)
-            first_point_enc = utils.sample_standard_gaussian(means_z0, sigma_z0)
+            logvar_z0 = first_point_logvar.repeat(n_traj_samples, 1, 1)
+            first_point_enc = utils.sample_standard_gaussian(means_z0, logvar_z0)
 
             latents_zs = utils.sample_standard_gaussian(z_mu.repeat(n_traj_samples, 1, 1, 1),
-                                                        z_std.repeat(n_traj_samples, 1, 1, 1))
+                                                        z_logvar.repeat(n_traj_samples, 1, 1, 1))
 
         else:
             raise Exception("Unknown encoder type {}".format(type(self.encoder_z0).__name__))
 
-        first_point_std = first_point_std.abs()
-        assert (torch.sum(first_point_std < 0) == 0.)
+        first_point_stdv = (first_point_logvar * .5).exp()
+        assert (torch.sum(first_point_stdv < 0) == 0.)
 
         if self.use_poisson_proc:
             n_traj_samples, n_traj, n_dims = first_point_enc.size()
@@ -105,7 +105,7 @@ class LatentODE(VAE_Baseline):
         # Run this iff re_encode > 0
         if re_encode > 0:
             # Revert memory state right after feeding last "interp" sample
-            self.encoder_z0.last_yi, self.encoder_z0.last_yi_std = last_yi, last_yi_std
+            self.encoder_z0.last_yi, self.encoder_z0.last_yi_logvar = last_yi, last_yi_logvar
             sol_y, pred_x = self.get_reconstruction_with_reencode(first_point_enc_aug, time_steps_to_predict, re_encode)
         else:
             # Otherwise run standard pipeline
@@ -123,9 +123,9 @@ class LatentODE(VAE_Baseline):
         reconstructed_x = self.decoder(latents_zs.permute(0,2,1,3))
 
         all_extra_info = {
-            "first_point": (first_point_mu, first_point_std, first_point_enc),
+            "first_point": (first_point_mu, first_point_stdv, first_point_enc),
             "z_mu": z_mu,
-            "z_std": z_std,
+            "z_logvar": z_logvar,
             "latent_traj": sol_y,
             "latent_traj_encoder": latents_zs,
             "reconstructed_traj_encoder": reconstructed_x,
@@ -176,8 +176,8 @@ class LatentODE(VAE_Baseline):
         # Save latent state in memory in case we need to re-encode from scratch again
         if sample_prior:
             n_trajs, n_samples, n_dims = first_point.size()
-            self.encoder_z0.last_yi = torch.ones(n_trajs, n_samples, n_dims * 2).to(self.device) * 1e-2
-            self.encoder_z0.last_yi_std = torch.ones(n_trajs, n_samples, n_dims * 2).to(self.device) * 1e-2
+            self.encoder_z0.last_yi = torch.ones(n_trajs, n_samples, n_dims * 2).to(self.device) # * 1e-2
+            self.encoder_z0.last_yi_logvar = torch.zeros(n_trajs, n_samples, n_dims * 2).to(self.device)
         n_timestamps = time_steps_to_predict.size(0)
         n_chunks = int(np.ceil(n_timestamps / re_encode))
         # Skip first timestamp as this is added in for loop
@@ -197,9 +197,10 @@ class LatentODE(VAE_Baseline):
             # Augment x with mask of ones and forward through encoder to do re-encoding
             mask = torch.ones_like(x_hat)
             x_hat = torch.cat((x_hat, mask), dim=-1)
-            # MAKE SURE IT DOES NOT OFFSET INITIAL TIMESTAMP
-            mean_z, stdv_z, _, _, _ = self.encoder_z0(x_hat, t_block, run_backwards=False, use_last_state=True)
-            z_hat = utils.sample_standard_gaussian(mean_z, stdv_z)
+            _, _, z_mu, z_logvar, _ = self.encoder_z0(x_hat, t_block, run_backwards=False, use_last_state=True)
+            mean_z = z_mu[:, -1, :]
+            logvar_z = z_logvar[:, -1, :]
+            z_hat = utils.sample_standard_gaussian(mean_z, logvar_z)
             # Concatenate the solutions (do not add last element as it will be in next block)
             sol_y.append(z[:, :, :-1, :])
             pred_x.append(x_hat[:, :, :-1, 0:1])

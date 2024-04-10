@@ -185,12 +185,12 @@ def get_device(tensor):
     return device
 
 
-def sample_standard_gaussian(mu, sigma):
+def sample_standard_gaussian(mu, logvar):
     device = get_device(mu)
 
     d = torch.distributions.normal.Normal(torch.Tensor([0.]).to(device), torch.Tensor([1.]).to(device))
     r = d.sample(mu.size()).squeeze(-1)
-    return r * sigma.float() + mu.float()
+    return r * torch.exp(.5 * logvar).float() + mu.float()
 
 
 def split_train_test(data, train_fraq=0.8):

@@ -259,11 +259,11 @@ class VAE_Baseline(nn.Module):
         # print("get_reconstruction done -- computing likelihood")
         if self.reconstruct_from_latent:
             z_mu = info["z_mu"]
-            z_std = info['z_std']
+            z_logvar = info['z_logvar']
             kldiv_z0 = 0
             for i in range(z_mu.shape[1]):
-                fp_mu, fp_std = z_mu[:,i,:,:], z_std[:,i,:,:]#info["first_point"]
-                fp_std = fp_std.abs()
+                fp_mu, fp_logvar = z_mu[:,i,:,:], z_logvar[:,i,:,:]#info["first_point"]
+                fp_std = (0.5 * fp_logvar).exp()
                 fp_distr = Normal(fp_mu, fp_std)
 
                 assert (torch.sum(fp_std < 0) == 0.)
@@ -272,7 +272,6 @@ class VAE_Baseline(nn.Module):
             kldiv_z0 = kldiv_z0/z_mu.shape[1]
         else:
             fp_mu, fp_std, fp_enc = info["first_point"]
-            fp_std = fp_std.abs()
             fp_distr = Normal(fp_mu, fp_std)
 
             assert (torch.sum(fp_std < 0) == 0.)
