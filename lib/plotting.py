@@ -343,7 +343,6 @@ class Visualizations:
             # Besides this boring timeline, let's extrapolate 15 more seconds into the future
             time_steps_future = utils.linspace_vector(time_steps[-1] + 0.2, time_steps[-1] + 20, 400).to(device)
             time_steps_all = torch.cat((time_steps, time_steps_future), 0)
-            n_to_predict, n_future = time_steps_to_predict.size(0), time_steps_future.size(0)
         reconstructions, info = model.get_reconstruction(time_steps_all,
                                                          observed_data, observed_time_steps,
                                                          truth_to_predict=data,

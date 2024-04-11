@@ -103,7 +103,7 @@ class LatentODE(VAE_Baseline):
 
         # Shape of sol_y [n_traj_samples, n_samples, n_timepoints, n_latents]
         # Run this iff re_encode > 0
-        if re_encode > 0:
+        if re_encode > 0 and running_mode != "training":
             # Revert memory state right after feeding last "interp" sample
             self.encoder_z0.last_yi, self.encoder_z0.last_yi_logvar = last_yi, last_yi_logvar
             sol_y, pred_x = self.get_reconstruction_with_reencode(first_point_enc_aug, time_steps_to_predict, re_encode)

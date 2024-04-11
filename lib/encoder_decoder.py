@@ -54,24 +54,38 @@ class GRU_unit(nn.Module):
         else:
             self.new_state_net = new_state_net
 
-        # self.new_model = nn.GRU(input_dim, latent_dim * 2, batch_first=False).to(device)
+        self.new_model = nn.GRU(input_dim, latent_dim * 2, batch_first=False).to(device)
 
-    def forward(self, y_mean, y_logvar, x, masked_update=True):
-        y_concat = torch.cat([y_mean, y_logvar, x], -1)
+    def forward(self, y_mean, y_logvar, x, masked_update=True, flat_trajs = False):
+        # y_concat = torch.cat([y_mean, y_logvar, x], -1)
+        #
+        # update_gate = self.update_gate(y_concat)
+        # reset_gate = self.reset_gate(y_concat)
+        # concat = torch.cat([y_mean * reset_gate, y_logvar * reset_gate, x], -1)
+        #
+        # new_state, new_state_logvar = utils.split_last_dim(self.new_state_net(concat))
+        #
+        # new_y = (1 - update_gate) * new_state + update_gate * y_mean
+        # new_y_logvar = (1 - update_gate) * new_state_logvar + update_gate * y_logvar
 
-        update_gate = self.update_gate(y_concat)
-        reset_gate = self.reset_gate(y_concat)
-        concat = torch.cat([y_mean * reset_gate, y_logvar * reset_gate, x], -1)
-
-        new_state, new_state_logvar = utils.split_last_dim(self.new_state_net(concat))
-
-        new_y = (1 - update_gate) * new_state + update_gate * y_mean
-        new_y_logvar = (1 - update_gate) * new_state_logvar + update_gate * y_logvar
+        # Step needed during re-encode as there we are carrying 3 samples of the same trajectory
+        if flat_trajs:
+            seq_samples, batch_size, in_dim = x.size()
+            x = x.view(seq_samples * batch_size, -1).unsqueeze(0)
+            y_mean = y_mean.view(seq_samples * batch_size, -1).unsqueeze(0)
+            y_logvar = y_logvar.view(seq_samples * batch_size, -1).unsqueeze(0)
 
         # GRU torch implementation
-        # new_state, _ = self.new_model(x, torch.cat([y_mean, y_std], -1))
-        # new_y, new_y_std = utils.split_last_dim(new_state)
+        new_state, _ = self.new_model(x, torch.cat([y_mean, y_logvar], -1))
+        new_y, new_y_logvar = utils.split_last_dim(new_state)
         # new_y_std.abs()
+        # Reshape things again
+        if flat_trajs:
+            x = x.view(seq_samples, batch_size, -1)
+            y_mean = y_mean.view(seq_samples, batch_size, -1)
+            y_logvar = y_logvar.view(seq_samples, batch_size, -1)
+            new_y = new_y.view(seq_samples, batch_size, -1)
+            new_y_logvar = new_y_logvar.view(seq_samples, batch_size, -1)
 
         assert (not torch.isnan(new_y).any())
 
@@ -229,6 +243,7 @@ class Encoder_z0_ODE_RNN(nn.Module):
         means_z0 = y0.reshape(n_samples, n_traj, self.latent_dim)
         logvar_z0 = y0_logvar.reshape(n_samples, n_traj, self.latent_dim)
 
+        # FIXME: method below re-computed this - this is a redundant call
         mean_z0, logvar_z0 = utils.split_last_dim(self.transform_z0(torch.cat((means_z0, logvar_z0), -1)))
 
         # Project memory states to latent to compute alignment loss
@@ -249,9 +264,12 @@ class Encoder_z0_ODE_RNN(nn.Module):
         # Get appropiate dimensions based on size of the input tensor
         if data.ndim > 3:
             n_samples, n_traj, n_tp, n_dims = data.size()
+            # This condition flats the number of trajs such that they are not processed as sequences
+            flat_trajs = True
         else:
             n_samples = 1
             n_traj, n_tp, n_dims = data.size()
+            flat_trajs = False
         # Init memory cell based on last state or not
         if use_last_state:
             # If not using last state, expect data to be a tensor [n_samples (prior), n_traj (batch), seq_len, n_dims]
@@ -318,7 +336,7 @@ class Encoder_z0_ODE_RNN(nn.Module):
                 xi = data[:, i, :].unsqueeze(0)
 
 
-            yi, yi_logvar = self.GRU_update(yi_ode, prev_logvar, xi)
+            yi, yi_logvar = self.GRU_update(yi_ode, prev_logvar, xi, flat_trajs = flat_trajs)
 
             prev_y, prev_logvar = yi, yi_logvar
             # Dummy condition to handle overflow
@@ -347,7 +365,7 @@ class Encoder_z0_ODE_RNN(nn.Module):
         else:
             y0 = latent_ys[:, 0, :, :].clone()
             y0_logvar = latent_ys_logvar[:, 0, :, :].clone()
-        
+
         # Save in memory last cell state for future computations
         self.last_yi = yi
         self.last_yi_logvar = yi_logvar
