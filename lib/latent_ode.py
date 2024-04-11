@@ -198,6 +198,7 @@ class LatentODE(VAE_Baseline):
             mask = torch.ones_like(x_hat)
             x_hat = torch.cat((x_hat, mask), dim=-1)
             _, _, z_mu, z_logvar, _ = self.encoder_z0(x_hat, t_block, run_backwards=False, use_last_state=True)
+            # TODO: should we try to use the mean here isntead? 
             mean_z = z_mu[:, -1, :]
             logvar_z = z_logvar[:, -1, :]
             z_hat = utils.sample_standard_gaussian(mean_z, logvar_z)
