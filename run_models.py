@@ -109,6 +109,8 @@ parser.add_argument('--reconstruct-from-latent', action='store_true',
                     help="Reconstruct the trajectory from the RNN latent state")
 parser.add_argument('--wait-until-kl-inc', type=int, default=10,
                     help="Epoch to start including KL loss (for VAE models)")
+parser.add_argument('--early-stopping-num', type=int, default=None, 
+                    help="Number of epochs of increases to best loss to wait for early stopping")
 
 args = parser.parse_args()
 
@@ -276,6 +278,9 @@ if __name__ == '__main__':
 
     num_batches = data_obj["n_train_batches"]
 
+    num_inc_test_loss = 0
+    last_loss = 1e6
+
     for itr in range(1, num_batches * (args.niters + 1)):
         optimizer.zero_grad()
         utils.update_learning_rate(optimizer, decay_rate=0.999, lowest=args.lr / 10)
@@ -360,6 +365,18 @@ if __name__ == '__main__':
                         w_run.log({"fields_grid": wandb.Image(viz.fig_fields_grid)})
                         w_run.log({"latent_pca": wandb.Image(viz.fig_latent_pca)})
                         w_run.log({"memory_pca": wandb.Image(viz.fig_memory_pca)})
+            
+        
+            if test_res['loss'] > last_loss:
+                num_inc_test_loss += 1
+            else:
+                num_inc_test_loss = 0
+            
+            last_loss = test_res['loss']
+            
+            if args.early_stopping_num is not None and num_inc_test_loss > args.early_stopping_num:
+                break
+
     torch.save({
         'args': args,
         'state_dict': model.state_dict(),
