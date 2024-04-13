@@ -103,7 +103,7 @@ class LatentODE(VAE_Baseline):
 
         # Shape of sol_y [n_traj_samples, n_samples, n_timepoints, n_latents]
         # Run this iff re_encode > 0
-        if re_encode > 0 and running_mode != "training":
+        if re_encode > 0:
             # Revert memory state right after feeding last "interp" sample
             self.encoder_z0.last_yi, self.encoder_z0.last_yi_logvar = last_yi, last_yi_logvar
             sol_y, pred_x = self.get_reconstruction_with_reencode(first_point_enc_aug, time_steps_to_predict, re_encode)
@@ -176,7 +176,7 @@ class LatentODE(VAE_Baseline):
         # Save latent state in memory in case we need to re-encode from scratch again
         if sample_prior:
             n_trajs, n_samples, n_dims = first_point.size()
-            self.encoder_z0.last_yi = torch.ones(n_trajs, n_samples, n_dims * 2).to(self.device) # * 1e-2
+            self.encoder_z0.last_yi = torch.zeros(n_trajs, n_samples, n_dims * 2).to(self.device) # * 1e-2
             self.encoder_z0.last_yi_logvar = torch.zeros(n_trajs, n_samples, n_dims * 2).to(self.device)
         n_timestamps = time_steps_to_predict.size(0)
         n_chunks = int(np.ceil(n_timestamps / re_encode))
@@ -189,19 +189,14 @@ class LatentODE(VAE_Baseline):
         for block in time_blocks:
             t_block = torch.cat((prev_timestamp.view(1), block), dim=0)
             # Solve latent ODE for each block
-            if sample_prior:
-                z = self.diffeq_solver.sample_traj_from_prior(prev_z, t_block)
-            else:
-                z = self.diffeq_solver(prev_z, t_block)
+            z = self.diffeq_solver(prev_z, t_block)
             x_hat = self.decoder(z)
             # Augment x with mask of ones and forward through encoder to do re-encoding
             mask = torch.ones_like(x_hat)
             x_hat = torch.cat((x_hat, mask), dim=-1)
             _, _, z_mu, z_logvar, _ = self.encoder_z0(x_hat, t_block, run_backwards=False, use_last_state=True)
-            # TODO: should we try to use the mean here isntead? 
             mean_z = z_mu[:, -1, :]
-            logvar_z = z_logvar[:, -1, :]
-            z_hat = utils.sample_standard_gaussian(mean_z, logvar_z)
+            z_hat = mean_z
             # Concatenate the solutions (do not add last element as it will be in next block)
             sol_y.append(z[:, :, :-1, :])
             pred_x.append(x_hat[:, :, :-1, 0:1])

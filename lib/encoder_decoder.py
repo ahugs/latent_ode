@@ -225,7 +225,7 @@ class Encoder_z0_ODE_RNN(nn.Module):
             n_traj, n_tp, n_dims = data.size()
 
         if len(time_steps) == 1:
-            prev_y = torch.ones((1, n_traj, self.latent_dim)).to(self.device)
+            prev_y = torch.zeroes((1, n_traj, self.latent_dim)).to(self.device)
             prev_logvar = torch.zeros((1, n_traj, self.latent_dim)).to(self.device)
 
             xi = data[:, 0, :].unsqueeze(0)
@@ -303,7 +303,7 @@ class Encoder_z0_ODE_RNN(nn.Module):
             dt = prev_t - t_i if run_backwards else t_i - prev_t
             # print(f"Timestep {dt}")
             # print(f"Is timestep smaller? {dt < minimum_step}")
-            if dt < minimum_step:
+            if dt <-1: #< minimum_step:
                 time_points = torch.stack((prev_t, t_i))
                 inc = self.z0_diffeq_solver.ode_func(prev_t, prev_y) * (t_i - prev_t) #-dt
                 # print(f"Entered vanilla iteration {i}")
