@@ -27,23 +27,27 @@ import lib.utils as utils
 def get_next_val(init, t, tmin, tmax, final = None):
 	if final is None:
 		return init
+	if t >= tmax:
+		return final
 	val = init + (final - init) / (tmax - tmin) * t
 	return val
 
 
 def generate_periodic(time_steps, init_freq, init_amplitude, starting_point, 
-	final_freq = None, final_amplitude = None, phi_offset = 0.):
+	final_freq = None, final_amplitude = None, phi_offset = 0., final_t=None):
 
 	tmin = time_steps.min()
 	tmax = time_steps.max()
+	if final_t is None:
+		final_t = tmax
 
 	data = []
 	t_prev = time_steps[0]
 	phi = phi_offset
 	for t in time_steps:
 		dt = t - t_prev
-		amp = get_next_val(init_amplitude, t, tmin, tmax, final_amplitude)
-		freq = get_next_val(init_freq, t, tmin, tmax, final_freq)
+		amp = get_next_val(init_amplitude, t, tmin, final_t, final_amplitude)
+		freq = get_next_val(init_freq, t, tmin, final_t, final_freq)
 		phi = phi + 2 * np.pi * freq * dt # integrate to get phase
 
 		y = amp * np.sin(phi) + starting_point
@@ -90,7 +94,7 @@ class Periodic_1d(TimeSeries):
 	def __init__(self, device = torch.device("cpu"), 
 		init_freq = 0.3, init_amplitude = 1.,
 		final_amplitude = 10., final_freq = 1., 
-		z0 = 0.):
+		z0 = 0., final_t=None):
 		"""
 		If some of the parameters (init_freq, init_amplitude, final_amplitude, final_freq) is not provided, it is randomly sampled.
 		For now, all the time series share the time points and the starting point.
@@ -102,6 +106,7 @@ class Periodic_1d(TimeSeries):
 		self.final_amplitude = final_amplitude
 		self.final_freq = final_freq
 		self.z0 = z0
+		self.final_t = final_t
 
 	def sample_traj(self, time_steps, n_samples = 1, noise_weight = 1.,
 		cut_out_section = None):
@@ -122,7 +127,8 @@ class Periodic_1d(TimeSeries):
 
 			traj = generate_periodic(time_steps, init_freq = init_freq, 
 				init_amplitude = init_amplitude, starting_point = noisy_z0, 
-				final_amplitude = final_amplitude, final_freq = final_freq)
+				final_amplitude = final_amplitude, final_freq = final_freq,
+				final_t=self.final_t)
 
 			# Cut the time dimension
 			traj = np.expand_dims(traj[:,1:], 0)

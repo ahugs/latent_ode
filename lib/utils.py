@@ -382,8 +382,8 @@ def split_data_extrap(data_dict, dataset="", n_observed_tp=None):
     # FIXME: HARDCODED, EXTRAPOLATION USES HALF TIMESTEPS
     if n_observed_tp is None:
         n_observed_tp = data_dict["data"].size(1) // 2
-    if dataset == "hopper":
-        n_observed_tp = data_dict["data"].size(1) // 3
+        if dataset == "hopper":
+            n_observed_tp = data_dict["data"].size(1) // 3
 
     split_dict = {"observed_data": data_dict["data"][:, :n_observed_tp, :].clone(),
                   "observed_tp": data_dict["time_steps"][:n_observed_tp].clone(),

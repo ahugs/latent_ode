@@ -201,9 +201,9 @@ def parse_datasets(args, device):
 	time_steps_train_extrap = torch.cat((torch.Tensor([0.0]), time_steps_train_extrap))
 	time_steps_train_extrap = torch.sort(time_steps_train_extrap)[0]
 
-	distribution = uniform.Uniform(torch.Tensor([0.0]),torch.Tensor([max_t_test]))
-	time_steps_test_extrap =  distribution.sample(torch.Size([n_total_tp_test-1]))[:,0]
-	time_steps_test_extrap = torch.cat((torch.Tensor([0.0]), time_steps_test_extrap))
+	distribution = uniform.Uniform(time_steps_train_extrap.max(),torch.Tensor([max_t_test]))
+	time_steps_test_extrap =  distribution.sample(torch.Size([n_total_tp_test-time_steps_train_extrap.shape[0]]))[:,0]
+	time_steps_test_extrap = torch.cat((time_steps_train_extrap, time_steps_test_extrap))
 	time_steps_test_extrap = torch.sort(time_steps_test_extrap)[0]
 
 	dataset_obj = None
@@ -211,9 +211,9 @@ def parse_datasets(args, device):
 	# Sample a periodic function
 	if dataset_name == "periodic":
 		dataset_obj = Periodic_1d(
-			init_freq = None, init_amplitude = 1.,
-			final_amplitude = 1., final_freq = None, 
-			z0 = 1.)
+			init_freq = 0.3, init_amplitude = 1.,
+			final_amplitude = 1., final_freq = 1, 
+			z0 = 1., final_t=time_steps_train_extrap[-1])
 
 	##################################################################
 
@@ -236,11 +236,12 @@ def parse_datasets(args, device):
 	input_dim = test_dataset.size(-1)
 
 	batch_size = min(args.batch_size, args.n)
+
 	train_dataloader = DataLoader(train_dataset, batch_size = batch_size, shuffle=False,
 		collate_fn= lambda batch: basic_collate_fn(batch, time_steps_train_extrap, data_type = "train"))
 	test_dataloader = DataLoader(test_dataset, batch_size = args.n, shuffle=False,
-		collate_fn= lambda batch: basic_collate_fn(batch, time_steps_test_extrap, data_type = "test",
-											 n_observed_tp=int(args.timepoints/2)),
+		collate_fn= lambda batch: basic_collate_fn(batch, time_steps_test_extrap, data_type = "test"),
+											n_observed_tp=int(args.timepoints/2)
 		)
 	
 	data_objects = {#"dataset_obj": dataset_obj, 

@@ -193,13 +193,14 @@ class LatentODE(VAE_Baseline):
             x_hat = self.decoder(z)
             # Augment x with mask of ones and forward through encoder to do re-encoding
             mask = torch.ones_like(x_hat)
+            len_x = x_hat.shape[-1]
             x_hat = torch.cat((x_hat, mask), dim=-1)
             _, _, z_mu, z_logvar, _ = self.encoder_z0(x_hat, t_block, run_backwards=False, use_last_state=True)
             mean_z = z_mu[:, -1, :]
             z_hat = mean_z
             # Concatenate the solutions (do not add last element as it will be in next block)
             sol_y.append(z[:, :, :-1, :])
-            pred_x.append(x_hat[:, :, :-1, 0:1])
+            pred_x.append(x_hat[:, :, :-1, 0:len_x])
             # Update the previous z
             prev_z = z_hat
             prev_timestamp = block[-1]
@@ -207,5 +208,5 @@ class LatentODE(VAE_Baseline):
         sol_y = torch.cat(sol_y, dim=2)
         sol_y = torch.cat((sol_y, prev_z.unsqueeze(dim=2)), dim=2)
         pred_x = torch.cat(pred_x, dim=2)
-        pred_x = torch.cat((pred_x, x_hat[:, :, -1:, 0:1]), dim=2)
+        pred_x = torch.cat((pred_x, x_hat[:, :, -1:, 0:len_x]), dim=2)
         return sol_y, pred_x
