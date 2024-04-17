@@ -211,8 +211,8 @@ def parse_datasets(args, device):
 	# Sample a periodic function
 	if dataset_name == "periodic":
 		dataset_obj = Periodic_1d(
-			init_freq = 0.3, init_amplitude = 1.,
-			final_amplitude = 1., final_freq = 1, 
+			init_freq = None, init_amplitude = 1.,
+			final_amplitude = 1., final_freq = None, 
 			z0 = 1., final_t=time_steps_train_extrap[-1])
 
 	##################################################################
@@ -240,8 +240,8 @@ def parse_datasets(args, device):
 	train_dataloader = DataLoader(train_dataset, batch_size = batch_size, shuffle=False,
 		collate_fn= lambda batch: basic_collate_fn(batch, time_steps_train_extrap, data_type = "train"))
 	test_dataloader = DataLoader(test_dataset, batch_size = args.n, shuffle=False,
-		collate_fn= lambda batch: basic_collate_fn(batch, time_steps_test_extrap, data_type = "test"),
-											n_observed_tp=int(args.timepoints/2)
+		collate_fn= lambda batch: basic_collate_fn(batch, time_steps_test_extrap, data_type = "test",
+											n_observed_tp=int(args.timepoints/2))
 		)
 	
 	data_objects = {#"dataset_obj": dataset_obj, 

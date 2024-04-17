@@ -339,7 +339,7 @@ class Visualizations:
         time_steps_to_predict = time_steps
         if isinstance(model, LatentODE):
             # sample at the original time points
-            time_steps_to_predict = utils.linspace_vector(time_steps[0], time_steps[-1], n_timesteps).to(device)
+            time_steps_to_predict = utils.linspace_vector(time_steps[0], time_steps[-1], len(time_steps)).to(device)
         
             # Besides this boring timeline, let's extrapolate 15 more seconds into the future
             # time_steps_future = utils.linspace_vector(time_steps[-1] + 0.2, time_steps[-1] + 20, 400).to(device)

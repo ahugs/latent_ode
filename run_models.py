@@ -103,7 +103,7 @@ parser.add_argument('--run-backwards', action='store_true', help="Run the ODE ba
 parser.add_argument('-t', '--timepoints', type=int, default=100, help="Total number of time-points")
 parser.add_argument('--max-t', type=float, default=5., help="We subsample points in the interval [0, args.max_tp]")
 
-parser.add_argument('-test-timepoints', type=int, default=500, help="Total number of time-points is test data")
+parser.add_argument('--test-timepoints', type=int, default=500, help="Total number of time-points is test data")
 parser.add_argument('--max-t-test', type=float, default=25., help="We subsample points in the interval [0, args.max_tp]")
 parser.add_argument('--noise-weight', type=float, default=0.01, help="Noise amplitude for generated traejctories")
 # Re-encode every, if -1, do not re-encode
