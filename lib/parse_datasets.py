@@ -15,7 +15,7 @@ from generate_timeseries import Periodic_1d
 from torch.distributions import uniform
 
 from torch.utils.data import DataLoader
-from mujoco_physics import HopperPhysics
+from mujoco_physics import HopperPhysics, D4RLHopper
 from physionet import PhysioNet, variable_time_collate_fn, get_data_min_max
 from person_activity import PersonActivity, variable_time_collate_fn_activity
 
@@ -25,219 +25,238 @@ import random
 
 #####################################################################################################
 def parse_datasets(args, device):
-    def basic_collate_fn(batch, time_steps, args=args, device=device, data_type="train"):
-        batch = torch.stack(batch)
-        data_dict = {
-            "data": batch,
-            "time_steps": time_steps}
+	
 
-        data_dict = utils.split_and_subsample_batch(data_dict, args, data_type=data_type)
-        return data_dict
+	def basic_collate_fn(batch, time_steps, args = args, device = device, data_type = "train", n_observed_tp=None):
+		batch = torch.stack(batch)
+		data_dict = {
+			"data": batch, 
+			"time_steps": time_steps}
 
-    dataset_name = args.dataset
+		data_dict = utils.split_and_subsample_batch(data_dict, args, data_type = data_type, n_observed_tp=n_observed_tp)
+		return data_dict
 
-    n_total_tp = args.timepoints + args.extrap
-    max_t_extrap = args.max_t / args.timepoints * n_total_tp
 
-    ##################################################################
-    # MuJoCo dataset
-    if dataset_name == "hopper":
-        dataset_obj = HopperPhysics(root='data', download=True, generate=False, device=device)
-        dataset = dataset_obj.get_dataset()[:args.n]
-        dataset = dataset.to(device)
+	dataset_name = args.dataset
 
-        n_tp_data = dataset[:].shape[1]
+	n_total_tp = args.timepoints + args.extrap
+	max_t_extrap = args.max_t / args.timepoints * n_total_tp
 
-        # Time steps that are used later on for exrapolation
-        time_steps = torch.arange(start=0, end=n_tp_data, step=1).float().to(device)
-        time_steps = time_steps / len(time_steps)
+	n_total_tp_test = args.test_timepoints + args.extrap
+	max_t_test = args.max_t_test/args.test_timepoints * n_total_tp_test
 
-        dataset = dataset.to(device)
-        time_steps = time_steps.to(device)
+	##################################################################
+	# MuJoCo dataset
+	if dataset_name == "d4rl_hopper":
+		data = D4RLHopper().data
+		train_dataset = torch.tensor(data[:int(data.shape[0]*0.8), :n_total_tp, ...], dtype=torch.float32).to(device)
+		test_dataset = torch.tensor(data[int(data.shape[0]*0.8):, :n_total_tp_test, ...], dtype=torch.float32).to(device)
 
-        if not args.extrap:
-            # Creating dataset for interpolation
-            # sample time points from different parts of the timeline,
-            # so that the model learns from different parts of hopper trajectory
-            n_traj = len(dataset)
-            n_tp_data = dataset.shape[1]
-            n_reduced_tp = args.timepoints
+	if dataset_name == "hopper":
+		train_dataset_obj = HopperPhysics(root='data/train', device = device, max_t = n_total_tp, n_samples=int(args.n*0.8))
+		test_dataset_obj = HopperPhysics(root='data/test', device = device, max_t = n_total_tp_test, n_samples=int(args.n*0.2))
+		
+		train_dataset = train_dataset_obj.get_dataset().to(device)
+		test_dataset = test_dataset_obj.get_dataset().to(device)
 
-            # sample time points from different parts of the timeline,
-            # so that the model learns from different parts of hopper trajectory
-            start_ind = np.random.randint(0, high=n_tp_data - n_reduced_tp + 1, size=n_traj)
-            end_ind = start_ind + n_reduced_tp
-            sliced = []
-            for i in range(n_traj):
-                sliced.append(dataset[i, start_ind[i]: end_ind[i], :])
-            dataset = torch.stack(sliced).to(device)
-            time_steps = time_steps[:n_reduced_tp]
 
-        # Split into train and test by the time sequences
-        train_y, test_y = utils.split_train_test(dataset, train_fraq=0.8)
+	if dataset_name == "d4rl_hopper" or dataset_name == "hopper":
+		# Time steps that are used later on for exrapolation
+		train_time_steps = torch.linspace(0, max_t_extrap, n_total_tp)
+		test_time_steps = torch.linspace(0, max_t_test, n_total_tp_test)
 
-        n_samples = len(dataset)
-        input_dim = dataset.size(-1)
+		train_time_steps = train_time_steps.to(device)
+		test_time_steps = test_time_steps.to(device)
 
-        batch_size = min(args.batch_size, args.n)
-        train_dataloader = DataLoader(train_y, batch_size=batch_size, shuffle=False,
-                                      collate_fn=lambda batch: basic_collate_fn(batch, time_steps, data_type="train"))
-        test_dataloader = DataLoader(test_y, batch_size=n_samples, shuffle=False,
-                                     collate_fn=lambda batch: basic_collate_fn(batch, time_steps, data_type="test"))
+		# if not args.extrap:
+		# 	# Creating dataset for interpolation
+		# 	# sample time points from different parts of the timeline, 
+		# 	# so that the model learns from different parts of hopper trajectory
+		# 	n_traj = len(train_dataset)
+		# 	n_tp_data = train_dataset.shape[1]
+		# 	n_reduced_tp = int(args.timepoints*args.sample_tp)
 
-        data_objects = {"dataset_obj": dataset_obj,
-                        "train_dataloader": utils.inf_generator(train_dataloader),
-                        "test_dataloader": utils.inf_generator(test_dataloader),
-                        "input_dim": input_dim,
-                        "n_train_batches": len(train_dataloader),
-                        "n_test_batches": len(test_dataloader)}
-        return data_objects
+		# 	# sample time points from different parts of the timeline, 
+		# 	# so that the model learns from different parts of hopper trajectory
+		# 	start_ind = np.random.randint(0, high=n_tp_data - n_reduced_tp +1, size=n_traj)
+		# 	end_ind = start_ind + n_reduced_tp
+		# 	sliced = []
+		# 	for i in range(n_traj):
+		# 			sliced.append(dataset[i, start_ind[i] : end_ind[i], :])
+		# 	dataset = torch.stack(sliced).to(device)
+		# 	time_steps = time_steps[:n_reduced_tp]
 
-    ##################################################################
-    # Physionet dataset
+		# Split into train and test by the time sequences
+		# train_y, test_y = utils.split_train_test(dataset, train_fraq = 0.8)
 
-    if dataset_name == "physionet":
-        train_dataset_obj = PhysioNet('data/physionet', train=True,
-                                      quantization=args.quantization,
-                                      download=True, n_samples=min(10000, args.n),
-                                      device=device)
-        # Use custom collate_fn to combine samples with arbitrary time observations.
-        # Returns the dataset along with mask and time steps
-        test_dataset_obj = PhysioNet('data/physionet', train=False,
-                                     quantization=args.quantization,
-                                     download=True, n_samples=min(10000, args.n),
-                                     device=device)
+		input_dim = train_dataset.size(-1)
 
-        # Combine and shuffle samples from physionet Train and physionet Test
-        total_dataset = train_dataset_obj[:len(train_dataset_obj)]
+		batch_size = min(args.batch_size, args.n)
+		train_dataloader = DataLoader(train_dataset, batch_size = batch_size, shuffle=False,
+			collate_fn= lambda batch: basic_collate_fn(batch, train_time_steps, data_type = "train"))
+		test_dataloader = DataLoader(test_dataset, batch_size = args.n, shuffle=False,
+			collate_fn= lambda batch: basic_collate_fn(batch, test_time_steps, data_type = "test", n_observed_tp=int(args.timepoints/2)))
+			
+		
+		data_objects = {#"dataset_obj": dataset_obj, 
+					"train_dataloader": utils.inf_generator(train_dataloader), 
+					"test_dataloader": utils.inf_generator(test_dataloader),
+					"input_dim": input_dim,
+					"n_train_batches": len(train_dataloader),
+					"n_test_batches": len(test_dataloader)}
+		return data_objects
 
-        if not args.classif:
-            # Concatenate samples from original Train and Test sets
-            # Only 'training' physionet samples are have labels. Therefore, if we do classifiction task, we don't need physionet 'test' samples.
-            total_dataset = total_dataset + test_dataset_obj[:len(test_dataset_obj)]
+	##################################################################
+	# Physionet dataset
 
-        # Shuffle and split
-        train_data, test_data = model_selection.train_test_split(total_dataset, train_size=0.8,
-                                                                 random_state=42, shuffle=True)
+	if dataset_name == "physionet":
+		train_dataset_obj = PhysioNet('data/physionet', train=True, 
+										quantization = args.quantization,
+										download=True, n_samples = min(10000, args.n), 
+										device = device)
+		# Use custom collate_fn to combine samples with arbitrary time observations.
+		# Returns the dataset along with mask and time steps
+		test_dataset_obj = PhysioNet('data/physionet', train=False, 
+										quantization = args.quantization,
+										download=True, n_samples = min(10000, args.n), 
+										device = device)
 
-        record_id, tt, vals, mask, labels = train_data[0]
+		# Combine and shuffle samples from physionet Train and physionet Test
+		total_dataset = train_dataset_obj[:len(train_dataset_obj)]
 
-        n_samples = len(total_dataset)
-        input_dim = vals.size(-1)
+		if not args.classif:
+			# Concatenate samples from original Train and Test sets
+			# Only 'training' physionet samples are have labels. Therefore, if we do classifiction task, we don't need physionet 'test' samples.
+			total_dataset = total_dataset + test_dataset_obj[:len(test_dataset_obj)]
 
-        batch_size = min(min(len(train_dataset_obj), args.batch_size), args.n)
-        data_min, data_max = get_data_min_max(total_dataset)
+		# Shuffle and split
+		train_data, test_data = model_selection.train_test_split(total_dataset, train_size= 0.8, 
+			random_state = 42, shuffle = True)
 
-        train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=False,
-                                      collate_fn=lambda batch: variable_time_collate_fn(batch, args, device,
-                                                                                        data_type="train",
-                                                                                        data_min=data_min,
-                                                                                        data_max=data_max))
-        test_dataloader = DataLoader(test_data, batch_size=n_samples, shuffle=False,
-                                     collate_fn=lambda batch: variable_time_collate_fn(batch, args, device,
-                                                                                       data_type="test",
-                                                                                       data_min=data_min,
-                                                                                       data_max=data_max))
+		record_id, tt, vals, mask, labels = train_data[0]
 
-        attr_names = train_dataset_obj.params
-        data_objects = {"dataset_obj": train_dataset_obj,
-                        "train_dataloader": utils.inf_generator(train_dataloader),
-                        "test_dataloader": utils.inf_generator(test_dataloader),
-                        "input_dim": input_dim,
-                        "n_train_batches": len(train_dataloader),
-                        "n_test_batches": len(test_dataloader),
-                        "attr": attr_names,  # optional
-                        "classif_per_tp": False,  # optional
-                        "n_labels": 1}  # optional
-        return data_objects
+		n_samples = len(total_dataset)
+		input_dim = vals.size(-1)
 
-    ##################################################################
-    # Human activity dataset
+		batch_size = min(min(len(train_dataset_obj), args.batch_size), args.n)
+		data_min, data_max = get_data_min_max(total_dataset)
 
-    if dataset_name == "activity":
-        n_samples = min(10000, args.n)
-        dataset_obj = PersonActivity('data/PersonActivity',
-                                     download=True, n_samples=n_samples, device=device)
-        print(dataset_obj)
-        # Use custom collate_fn to combine samples with arbitrary time observations.
-        # Returns the dataset along with mask and time steps
+		train_dataloader = DataLoader(train_data, batch_size= batch_size, shuffle=False, 
+			collate_fn= lambda batch: variable_time_collate_fn(batch, args, device, data_type = "train",
+				data_min = data_min, data_max = data_max))
+		test_dataloader = DataLoader(test_data, batch_size = n_samples, shuffle=False, 
+			collate_fn= lambda batch: variable_time_collate_fn(batch, args, device, data_type = "test",
+				data_min = data_min, data_max = data_max))
 
-        # Shuffle and split
-        train_data, test_data = model_selection.train_test_split(dataset_obj, train_size=0.8,
-                                                                 random_state=42, shuffle=True)
+		attr_names = train_dataset_obj.params
+		data_objects = {"dataset_obj": train_dataset_obj, 
+					"train_dataloader": utils.inf_generator(train_dataloader), 
+					"test_dataloader": utils.inf_generator(test_dataloader),
+					"input_dim": input_dim,
+					"n_train_batches": len(train_dataloader),
+					"n_test_batches": len(test_dataloader),
+					"attr": attr_names, #optional
+					"classif_per_tp": False, #optional
+					"n_labels": 1} #optional
+		return data_objects
 
-        train_data = [train_data[i] for i in np.random.choice(len(train_data), len(train_data))]
-        test_data = [test_data[i] for i in np.random.choice(len(test_data), len(test_data))]
+	##################################################################
+	# Human activity dataset
 
-        record_id, tt, vals, mask, labels = train_data[0]
-        input_dim = vals.size(-1)
+	if dataset_name == "activity":
+		n_samples =  min(10000, args.n)
+		dataset_obj = PersonActivity('data/PersonActivity', 
+							download=True, n_samples =  n_samples, device = device)
+		print(dataset_obj)
+		# Use custom collate_fn to combine samples with arbitrary time observations.
+		# Returns the dataset along with mask and time steps
 
-        batch_size = min(min(len(dataset_obj), args.batch_size), args.n)
-        train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=False,
-                                      collate_fn=lambda batch: variable_time_collate_fn_activity(batch, args, device,
-                                                                                                 data_type="train"))
-        test_dataloader = DataLoader(test_data, batch_size=n_samples, shuffle=False,
-                                     collate_fn=lambda batch: variable_time_collate_fn_activity(batch, args, device,
-                                                                                                data_type="test"))
+		# Shuffle and split
+		train_data, test_data = model_selection.train_test_split(dataset_obj, train_size= 0.8, 
+			random_state = 42, shuffle = True)
 
-        data_objects = {"dataset_obj": dataset_obj,
-                        "train_dataloader": utils.inf_generator(train_dataloader),
-                        "test_dataloader": utils.inf_generator(test_dataloader),
-                        "input_dim": input_dim,
-                        "n_train_batches": len(train_dataloader),
-                        "n_test_batches": len(test_dataloader),
-                        "classif_per_tp": True,  # optional
-                        "n_labels": labels.size(-1)}
+		train_data = [train_data[i] for i in np.random.choice(len(train_data), len(train_data))]
+		test_data = [test_data[i] for i in np.random.choice(len(test_data), len(test_data))]
 
-        return data_objects
+		record_id, tt, vals, mask, labels = train_data[0]
+		input_dim = vals.size(-1)
 
-    ########### 1d datasets ###########
+		batch_size = min(min(len(dataset_obj), args.batch_size), args.n)
+		train_dataloader = DataLoader(train_data, batch_size= batch_size, shuffle=False, 
+			collate_fn= lambda batch: variable_time_collate_fn_activity(batch, args, device, data_type = "train"))
+		test_dataloader = DataLoader(test_data, batch_size=n_samples, shuffle=False, 
+			collate_fn= lambda batch: variable_time_collate_fn_activity(batch, args, device, data_type = "test"))
 
-    # Sampling args.timepoints time points in the interval [0, args.max_t]
-    # Sample points for both training sequence and explapolation (test)
-    distribution = uniform.Uniform(torch.Tensor([0.0]), torch.Tensor([max_t_extrap]))
-    time_steps_extrap = distribution.sample(torch.Size([n_total_tp - 1]))[:, 0]
-    time_steps_extrap = torch.cat((torch.Tensor([0.0]), time_steps_extrap))
-    time_steps_extrap = torch.sort(time_steps_extrap)[0]
+		data_objects = {"dataset_obj": dataset_obj, 
+					"train_dataloader": utils.inf_generator(train_dataloader), 
+					"test_dataloader": utils.inf_generator(test_dataloader),
+					"input_dim": input_dim,
+					"n_train_batches": len(train_dataloader),
+					"n_test_batches": len(test_dataloader),
+					"classif_per_tp": True, #optional
+					"n_labels": labels.size(-1)}
 
-    dataset_obj = None
-    ##################################################################
-    # Sample a periodic function
-    if dataset_name == "periodic":
-        dataset_obj = Periodic_1d(
-            init_freq=0.3, init_amplitude=1.,
-            final_amplitude=1., final_freq=1,
-            z0=1.)
+		return data_objects
 
-    ##################################################################
+	########### 1d datasets ###########
 
-    if dataset_obj is None:
-        raise Exception("Unknown dataset: {}".format(dataset_name))
+	# Sampling args.timepoints time points in the interval [0, args.max_t]
+	# Sample points for both training sequence and explapolation (test)
+	distribution = uniform.Uniform(torch.Tensor([0.0]),torch.Tensor([max_t_extrap]))
+	time_steps_train_extrap =  distribution.sample(torch.Size([n_total_tp-1]))[:,0]
+	time_steps_train_extrap = torch.cat((torch.Tensor([0.0]), time_steps_train_extrap))
+	time_steps_train_extrap = torch.sort(time_steps_train_extrap)[0]
 
-    dataset = dataset_obj.sample_traj(time_steps_extrap, n_samples=args.n,
-                                      noise_weight=args.noise_weight)
+	distribution = uniform.Uniform(time_steps_train_extrap.max(),torch.Tensor([max_t_test]))
+	time_steps_test_extrap =  distribution.sample(torch.Size([n_total_tp_test-time_steps_train_extrap.shape[0]]))[:,0]
+	time_steps_test_extrap = torch.cat((time_steps_train_extrap, time_steps_test_extrap))
+	time_steps_test_extrap = torch.sort(time_steps_test_extrap)[0]
 
-    # Process small datasets
-    dataset = dataset.to(device)
-    time_steps_extrap = time_steps_extrap.to(device)
+	dataset_obj = None
+	##################################################################
+	# Sample a periodic function
+	if dataset_name == "periodic":
+		dataset_obj = Periodic_1d(
+			init_freq = None, init_amplitude = 1.,
+			final_amplitude = 1., final_freq = None, 
+			z0 = 1., final_t=time_steps_train_extrap[-1])
 
-    train_y, test_y = utils.split_train_test(dataset, train_fraq=0.8)
+	##################################################################
 
-    n_samples = len(dataset)
-    input_dim = dataset.size(-1)
+	if dataset_obj is None:
+		raise Exception("Unknown dataset: {}".format(dataset_name))
 
-    batch_size = min(args.batch_size, args.n)
-    train_dataloader = DataLoader(train_y, batch_size=batch_size, shuffle=False,
-                                  collate_fn=lambda batch: basic_collate_fn(batch, time_steps_extrap, args=args,
-                                                                            data_type="train"))
-    test_dataloader = DataLoader(test_y, batch_size=args.n, shuffle=False,
-                                 collate_fn=lambda batch: basic_collate_fn(batch, time_steps_extrap, args=args, data_type="test"))
+	train_dataset = dataset_obj.sample_traj(time_steps_train_extrap, n_samples = int(args.n*0.8), 
+		noise_weight = args.noise_weight)
+	
+	test_dataset = dataset_obj.sample_traj(time_steps_test_extrap, n_samples = int(args.n*0.2), 
+		noise_weight = args.noise_weight)
 
-    data_objects = {  # "dataset_obj": dataset_obj,
-        "train_dataloader": utils.inf_generator(train_dataloader),
-        "test_dataloader": utils.inf_generator(test_dataloader),
-        "input_dim": input_dim,
-        "n_train_batches": len(train_dataloader),
-        "n_test_batches": len(test_dataloader)}
+	# Process small datasets
+	train_dataset = train_dataset.to(device)
+	time_steps_train_extrap = time_steps_train_extrap.to(device)
 
-    return data_objects
+	test_dataset = test_dataset.to(device)
+	time_steps_test_extrap = time_steps_test_extrap.to(device)
+
+	input_dim = test_dataset.size(-1)
+
+	batch_size = min(args.batch_size, args.n)
+
+	train_dataloader = DataLoader(train_dataset, batch_size = batch_size, shuffle=False,
+		collate_fn= lambda batch: basic_collate_fn(batch, time_steps_train_extrap, data_type = "train"))
+	test_dataloader = DataLoader(test_dataset, batch_size = args.n, shuffle=False,
+		collate_fn= lambda batch: basic_collate_fn(batch, time_steps_test_extrap, data_type = "test",
+											n_observed_tp=int(args.timepoints/2))
+		)
+	
+	data_objects = {#"dataset_obj": dataset_obj, 
+				"train_dataloader": utils.inf_generator(train_dataloader), 
+				"test_dataloader": utils.inf_generator(test_dataloader),
+				"input_dim": input_dim,
+				"n_train_batches": len(train_dataloader),
+				"n_test_batches": len(test_dataloader)}
+
+	return data_objects
+
+

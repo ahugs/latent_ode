@@ -185,12 +185,12 @@ def get_device(tensor):
     return device
 
 
-def sample_standard_gaussian(mu, sigma):
+def sample_standard_gaussian(mu, logvar):
     device = get_device(mu)
 
     d = torch.distributions.normal.Normal(torch.Tensor([0.]).to(device), torch.Tensor([1.]).to(device))
     r = d.sample(mu.size()).squeeze(-1)
-    return r * sigma.float() + mu.float()
+    return r * torch.exp(.5 * logvar).float() + mu.float()
 
 
 def split_train_test(data, train_fraq=0.8):
@@ -377,12 +377,13 @@ def shift_outputs(outputs, first_datapoint=None):
     return outputs
 
 
-def split_data_extrap(data_dict, dataset=""):
+def split_data_extrap(data_dict, dataset="", n_observed_tp=None):
     device = get_device(data_dict["data"])
     # FIXME: HARDCODED, EXTRAPOLATION USES HALF TIMESTEPS
-    n_observed_tp = data_dict["data"].size(1) // 2
-    if dataset == "hopper":
-        n_observed_tp = data_dict["data"].size(1) // 3
+    if n_observed_tp is None:
+        n_observed_tp = data_dict["data"].size(1) // 2
+        if dataset == "hopper":
+            n_observed_tp = data_dict["data"].size(1) // 3
 
     split_dict = {"observed_data": data_dict["data"][:, :n_observed_tp, :].clone(),
                   "observed_tp": data_dict["time_steps"][:n_observed_tp].clone(),
@@ -476,18 +477,18 @@ def subsample_observed_data(data_dict, n_tp_to_sample=None, n_points_to_cut=None
     return new_data_dict
 
 
-def split_and_subsample_batch(data_dict, args, data_type="train"):
+def split_and_subsample_batch(data_dict, args, data_type="train", n_observed_tp=None):
     if data_type == "train":
         # Training set
         if args.extrap:
-            processed_dict = split_data_extrap(data_dict, dataset=args.dataset)
+            processed_dict = split_data_extrap(data_dict, dataset=args.dataset, n_observed_tp=n_observed_tp)
         else:
             processed_dict = split_data_interp(data_dict)
 
     else:
         # Test set
         if args.extrap:
-            processed_dict = split_data_extrap(data_dict, dataset=args.dataset)
+            processed_dict = split_data_extrap(data_dict, dataset=args.dataset, n_observed_tp=n_observed_tp)
         else:
             processed_dict = split_data_interp(data_dict)
 

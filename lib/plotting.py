@@ -324,7 +324,7 @@ class Visualizations:
         ax.contourf(xx, yy, density_grid, cmap=cmap2, alpha=0.3)
 
     def draw_all_plots_one_dim(self, data_dict, model,
-                               plot_name="", save=False, save_dir=None, experimentID=0.):
+                               plot_name="", save=False, save_dir=None, experimentID=0., n_timesteps=100):
 
         data = data_dict["data_to_predict"]
         time_steps = data_dict["tp_to_predict"]
@@ -339,12 +339,12 @@ class Visualizations:
         time_steps_to_predict = time_steps
         if isinstance(model, LatentODE):
             # sample at the original time points
-            time_steps_to_predict = utils.linspace_vector(time_steps[0], time_steps[-1], 100).to(device)
+            time_steps_to_predict = utils.linspace_vector(time_steps[0], time_steps[-1], len(time_steps)).to(device)
+        
             # Besides this boring timeline, let's extrapolate 15 more seconds into the future
-            time_steps_future = utils.linspace_vector(time_steps[-1] + 0.2, time_steps[-1] + 20, 400).to(device)
-            time_steps_all = torch.cat((time_steps, time_steps_future), 0)
-            n_to_predict, n_future = time_steps_to_predict.size(0), time_steps_future.size(0)
-        reconstructions, info = model.get_reconstruction(time_steps_all,
+            # time_steps_future = utils.linspace_vector(time_steps[-1] + 0.2, time_steps[-1] + 20, 400).to(device)
+            # time_steps_all = torch.cat((time_steps, time_steps_future), 0)
+        reconstructions, info = model.get_reconstruction(time_steps_to_predict,
                                                          observed_data, observed_time_steps,
                                                          truth_to_predict=data,
                                                          mask=observed_mask, n_traj_samples=10,
@@ -392,7 +392,7 @@ class Visualizations:
                                       color=cmap(2), add_to_plot=True, label=r"$x_{T:T+N}$", add_legend=True)
                 # Plot reconstructions
                 plot_trajectories(ax[i],
-                                  reconstructions_for_plotting[traj_id].unsqueeze(0), time_steps_all,
+                                  reconstructions_for_plotting[traj_id].unsqueeze(0), time_steps_to_predict,
                                   min_y=min_y, max_y=max_y, title="Sample {} (data space)".format(traj_id),
                                   dim_to_show=dim_to_show,
                                   add_to_plot=True, marker='', color=cmap(3), linewidth=3, label=reconstruction_text,
@@ -400,7 +400,7 @@ class Visualizations:
                 # Plot variance estimated over multiple samples from approx posterior
                 plot_std(ax[i],
                          reconstructions_for_plotting[traj_id].unsqueeze(0), reconstr_std[traj_id].unsqueeze(0),
-                         time_steps_all, alpha=0.5, color=cmap(3))
+                         time_steps_to_predict, alpha=0.5, color=cmap(3))
                 self.set_plot_lims(ax[i], "traj_" + str(traj_id))
 
         # Plot true posterior and approximate posterior
@@ -429,13 +429,13 @@ class Visualizations:
             torch.manual_seed(1991)
             np.random.seed(1991)
 
-            traj_from_prior = model.sample_traj_from_prior(time_steps_all, n_traj_samples=3,
+            traj_from_prior = model.sample_traj_from_prior(time_steps_to_predict, n_traj_samples=3,
                                                            re_encode=data_dict['re_encode'])
             # Since in this case n_traj = 1, n_traj_samples -- requested number of samples from the prior, squeeze n_traj dimension
             traj_from_prior = traj_from_prior.squeeze(1)
 
             for ax in [self.ax_traj_from_prior, self.ax_traj_prior_solo]:
-                plot_trajectories(ax, traj_from_prior, time_steps_all,
+                plot_trajectories(ax, traj_from_prior, time_steps_to_predict,
                                   marker='', linewidth=3)
                 ax.set_title("Samples from prior (data space)", pad=20)
         # self.set_plot_lims(self.ax_traj_from_prior, "traj_from_prior")
@@ -485,7 +485,7 @@ class Visualizations:
         for ax in [self.ax_latent_traj, self.ax_latent_solo]:
             for i in range(n_latent_dims):
                 col = cmap(i)
-                plot_trajectories(ax, latent_traj, time_steps_all,
+                plot_trajectories(ax, latent_traj, time_steps_to_predict,
                                   title=r"Latent trajectories $z(t)$ (latent space)", dim_to_show=i, color=col,
                                   marker='', add_to_plot=True,
                                   linewidth=3)
@@ -519,15 +519,15 @@ class Visualizations:
             sample_latent_traj_pca = pca.fit_transform(sample_latent_traj)
             sample_latent_traj_pca = torch.from_numpy(sample_latent_traj_pca)
             # Plot first and second components
-            plot_trajectories(self.ax_latent_pca[0], sample_latent_traj_pca[:, 0][None, :, None], time_steps_all,
+            plot_trajectories(self.ax_latent_pca[0], sample_latent_traj_pca[:, 0][None, :, None], time_steps_to_predict,
                               title=r"First component $z(t)$", color=col,
                               marker='', add_to_plot=True,
                               linewidth=3)
-            plot_trajectories(self.ax_latent_pca[1], sample_latent_traj_pca[:, 1][None, :, None], time_steps_all,
+            plot_trajectories(self.ax_latent_pca[1], sample_latent_traj_pca[:, 1][None, :, None], time_steps_to_predict,
                               title=r"Second component $z(t)$", color=col,
                               marker='', add_to_plot=True,
                               linewidth=3)
-            plot_trajectories(self.ax_latent_pca[2], sample_latent_traj_pca[:, 2][None, :, None], time_steps_all,
+            plot_trajectories(self.ax_latent_pca[2], sample_latent_traj_pca[:, 2][None, :, None], time_steps_to_predict,
                               title=r"Third component $z(t)$", color=col,
                               marker='', add_to_plot=True,
                               linewidth=3)

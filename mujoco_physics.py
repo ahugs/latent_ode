@@ -9,23 +9,49 @@ import torch
 from lib.utils import get_dict_template
 import lib.utils as utils
 from torchvision.datasets.utils import download_url
+import h5py
+
+
+class D4RLHopper(object):
+
+	def __init__(self):
+		self.data = self._load_data()
+
+	def _load_data(self):
+		try:
+			import h5py
+		except ImportError as e:
+			raise ImportError('To use the D4RLHopper dataset, please install h5py.') from e
+
+		with h5py.File('/home/ahugessen/.d4rl/datasets/hopper_expert-v2.hdf5', 'r') as dataset:
+			obs = dataset["observations"][:]
+			act = dataset["actions"][:]
+			rew = dataset["rewards"][:]
+			terminated = dataset["terminals"][:]
+			truncated = dataset["timeouts"][:]
+			obs_next = dataset["next_observations"][:]
+
+		end_indices = np.where(truncated + terminated)[0]
+		obs_by_ep = np.split(obs, indices_or_sections=end_indices + 1)[:-1]
+		data = []
+		for obs in obs_by_ep:
+			if len(obs) == 1000:
+				data.append(obs)
+
+		return np.stack(data)
 
 class HopperPhysics(object):
 
-	T = 200
 	D = 14
-
-	n_training_samples = 10000
 
 	training_file = 'training.pt'
 
-	def __init__(self, root, download = True, generate=False, device = torch.device("cpu")):
+	def __init__(self, root, device = torch.device("cpu"), max_t=200, n_samples=10000):
 		self.root = root
-		if download:
-			self._download()
+		self.T=max_t
+		self.n_training_samples = n_samples
 
-		if generate:
-			self._generate_dataset()
+		self._generate_dataset()
 
 		if not self._check_exists():
 			raise RuntimeError('Dataset not found.' + ' You can use download=True to download it')
@@ -37,6 +63,7 @@ class HopperPhysics(object):
 
 		self.device =device
 
+		
 	def visualize(self, traj, plot_name = 'traj', dirname='hopper_imgs', video_name = None):
 		r"""Generates images of the trajectory and stores them as <dirname>/traj<index>-<t>.jpg"""
 
@@ -80,14 +107,6 @@ class HopperPhysics(object):
 		train_data = self._generate_random_trajectories(self.n_training_samples)
 		torch.save(train_data, os.path.join(self.data_folder, self.training_file))
 
-	def _download(self):
-		if self._check_exists():
-			return
-
-		print("Downloading the dataset [325MB] ...")
-		os.makedirs(self.data_folder, exist_ok=True)
-		url = "http://www.cs.toronto.edu/~rtqichen/datasets/HopperPhysics/training.pt"
-		download_url(url, self.data_folder, "training.pt", None)
 
 	def _generate_random_trajectories(self, n_samples):
 
