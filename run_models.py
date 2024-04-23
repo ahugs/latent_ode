@@ -84,13 +84,10 @@ parser.add_argument('--classif', action='store_true', help="Include binary class
 
 parser.add_argument('--linear-classif', action='store_true', help="If using a classifier, use a linear classifier instead of 1-layer NN")
 parser.add_argument('--extrap', action='store_true', help="Set extrapolation mode. If this flag is not set, run interpolation mode.")
-parser.add_argument('--run-backwards', action='store_true', help="Run the ODE backwards in time during encoding")
 
 parser.add_argument('-t', '--timepoints', type=int, default=100, help="Total number of time-points")
 parser.add_argument('--max-t',  type=float, default=5., help="We subsample points in the interval [0, args.max_tp]")
 parser.add_argument('--noise-weight', type=float, default=0.01, help="Noise amplitude for generated traejctories")
-# Re-encode every, if -1, do not re-encode
-parser.add_argument('--re-encode', type=int, default=0, help="Re-encode every n-th time points during inference")
 
 
 args = parser.parse_args()
