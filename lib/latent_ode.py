@@ -49,8 +49,9 @@ class LatentODE(VAE_Baseline):
         self.decoder = decoder
         self.use_poisson_proc = use_poisson_proc
 
-    def get_reconstruction(self, time_steps_to_predict, truth, truth_time_steps,
-                           mask=None, n_traj_samples=1, run_backwards=True, mode=None, re_encode=0):
+    def get_reconstruction(self, time_steps_to_predict, truth, truth_time_steps, truth_to_predict = None,
+                           mask=None, n_traj_samples=1, run_backwards=True, mode=None, re_encode=0, \
+                           running_mode: str = "training"):
 
         if isinstance(self.encoder_z0, Encoder_z0_ODE_RNN) or \
                 isinstance(self.encoder_z0, Encoder_z0_RNN):
@@ -60,15 +61,24 @@ class LatentODE(VAE_Baseline):
                 truth_w_mask = torch.cat((truth, mask), -1)
             first_point_mu, first_point_std, z_mu, z_std, latent_ys = self.encoder_z0(
                 truth_w_mask, truth_time_steps, run_backwards=run_backwards)
-            
-
+            # Make clone of latest memory state for re-encode step
+            last_yi, last_yi_std = self.encoder_z0.last_yi.clone(), self.encoder_z0.last_yi_std.clone()
+            # If extrapolation mode, we forward the "to-predict" time points to the encoder
+            if mode == "extrap" and self.reconstruct_from_latent:
+                # Pick actual last sample
+                first_point_mu = z_mu[:, -1, :]
+                first_point_std = z_std[:, -1, :]
+                if running_mode == "training":
+                    truth_w_mask2predict = torch.cat((truth_to_predict, torch.ones_like(truth_to_predict)), -1)
+                    # z_mu, z_std and latent_ys is replaced by the extrap states
+                    _, _, z_mu, z_std, latent_ys = self.encoder_z0(
+                        truth_w_mask2predict, time_steps_to_predict, run_backwards=False, use_last_state=True)
 
             means_z0 = first_point_mu.repeat(n_traj_samples, 1, 1)
             sigma_z0 = first_point_std.repeat(n_traj_samples, 1, 1)
             first_point_enc = utils.sample_standard_gaussian(means_z0, sigma_z0)
 
-
-            latents_zs = utils.sample_standard_gaussian(z_mu.repeat(n_traj_samples, 1, 1, 1), 
+            latents_zs = utils.sample_standard_gaussian(z_mu.repeat(n_traj_samples, 1, 1, 1),
                                                         z_std.repeat(n_traj_samples, 1, 1, 1))
 
         else:
@@ -94,6 +104,8 @@ class LatentODE(VAE_Baseline):
         # Shape of sol_y [n_traj_samples, n_samples, n_timepoints, n_latents]
         # Run this iff re_encode > 0
         if re_encode > 0:
+            # Revert memory state right after feeding last "interp" sample
+            self.encoder_z0.last_yi, self.encoder_z0.last_yi_std = last_yi, last_yi_std
             sol_y, pred_x = self.get_reconstruction_with_reencode(first_point_enc_aug, time_steps_to_predict, re_encode)
         else:
             # Otherwise run standard pipeline
@@ -149,7 +161,7 @@ class LatentODE(VAE_Baseline):
 
         if re_encode > 0:
             sol_y, pred_x = self.get_reconstruction_with_reencode(starting_point_enc_aug, time_steps_to_predict,
-                                                                  re_encode, sample_prior = True)
+                                                                  re_encode, sample_prior=True)
         else:
             sol_y = self.diffeq_solver.sample_traj_from_prior(starting_point_enc_aug, time_steps_to_predict,
                                                               n_traj_samples=3)
@@ -161,15 +173,11 @@ class LatentODE(VAE_Baseline):
         return pred_x
 
     def get_reconstruction_with_reencode(self, first_point, time_steps_to_predict, re_encode, sample_prior = False):
-        use_last_state = True if re_encode > 0 else False
         # Save latent state in memory in case we need to re-encode from scratch again
         if sample_prior:
             n_trajs, n_samples, n_dims = first_point.size()
             self.encoder_z0.last_yi = torch.ones(n_trajs, n_samples, n_dims * 2).to(self.device) * 1e-2
             self.encoder_z0.last_yi_std = torch.ones(n_trajs, n_samples, n_dims * 2).to(self.device) * 1e-2
-        # else:
-            # FIXME: Set latent state to zero, what is the latent space when sampling prior?
-            # h_0_mean, h_0_stdv = self.encoder_z0.last_yi.clone(), self.encoder_z0.last_yi_std.clone()
         n_timestamps = time_steps_to_predict.size(0)
         n_chunks = int(np.ceil(n_timestamps / re_encode))
         # Skip first timestamp as this is added in for loop
@@ -187,23 +195,20 @@ class LatentODE(VAE_Baseline):
                 z = self.diffeq_solver(prev_z, t_block)
             x_hat = self.decoder(z)
             # Augment x with mask of ones and forward through encoder to do re-encoding
-            # FIXME - should this be predicted mask?
             mask = torch.ones_like(x_hat)
             x_hat = torch.cat((x_hat, mask), dim=-1)
-            # MAKE SURE IT DOES NOT OFFSET INMITIAL TIMESTAMP
-            mean_z, stdv_z, _ = self.encoder_z0(x_hat, t_block, run_backwards=False, use_last_state=use_last_state)
+            # MAKE SURE IT DOES NOT OFFSET INITIAL TIMESTAMP
+            mean_z, stdv_z, _, _, _ = self.encoder_z0(x_hat, t_block, run_backwards=False, use_last_state=True)
+            z_hat = utils.sample_standard_gaussian(mean_z, stdv_z)
             # Concatenate the solutions (do not add last element as it will be in next block)
             sol_y.append(z[:, :, :-1, :])
             pred_x.append(x_hat[:, :, :-1, 0:1])
             # Update the previous z
-            # FIXME - what if we sample z from the distribution?
-            prev_z = mean_z
+            prev_z = z_hat
             prev_timestamp = block[-1]
         # Transform list to tensor and add last element to the solution
         sol_y = torch.cat(sol_y, dim=2)
         sol_y = torch.cat((sol_y, prev_z.unsqueeze(dim=2)), dim=2)
         pred_x = torch.cat(pred_x, dim=2)
         pred_x = torch.cat((pred_x, x_hat[:, :, -1:, 0:1]), dim=2)
-        # Restore latent state in memory of the encoder
-        # self.encoder_z0.last_yi, self.encoder_z0.last_yi_std = h_0_mean, h_0_stdv
         return sol_y, pred_x

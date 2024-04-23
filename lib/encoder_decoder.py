@@ -213,7 +213,7 @@ class Encoder_z0_ODE_RNN(nn.Module):
         assert (not torch.isnan(data).any())
         assert (not torch.isnan(time_steps).any())
 
-        if use_last_state:
+        if data.ndim > 3:
             # If not using last state, expect data to be a tensor [n_samples (prior), n_traj (batch), seq_len, n_dims]
             n_samples, n_traj, n_tp, n_dims = data.size()
         else:
@@ -226,18 +226,18 @@ class Encoder_z0_ODE_RNN(nn.Module):
 
             xi = data[:, 0, :].unsqueeze(0)
 
-            last_yi, last_yi_std = self.GRU_update(prev_y, prev_std, xi)
+            y0, y0_std = self.GRU_update(prev_y, prev_std, xi)
+            self.last_yi = y0
+            self.last_yi_std = y0_std
             extra_info = None
         else:
             # Added initial state in case it is provided
-            last_yi, last_yi_std, latent_ys, latent_ys_std, extra_info = self.run_odernn(
+            y0, y0_std, latent_ys, latent_ys_std, extra_info = self.run_odernn(
                 data, time_steps, run_backwards=run_backwards,
                 save_info=save_info, use_last_state = use_last_state)
 
-        # Save in memory last cell state for future computations
-        self.last_yi, self.last_yi_std = last_yi.clone(), last_yi_std.clone()
-        means_z0 = last_yi.reshape(n_samples, n_traj, self.latent_dim)
-        std_z0 = last_yi_std.reshape(n_samples, n_traj, self.latent_dim)
+        means_z0 = y0.reshape(n_samples, n_traj, self.latent_dim)
+        std_z0 = y0_std.reshape(n_samples, n_traj, self.latent_dim)
 
         mean_z0, std_z0 = utils.split_last_dim(self.transform_z0(torch.cat((means_z0, std_z0), -1)))
 
@@ -258,14 +258,19 @@ class Encoder_z0_ODE_RNN(nn.Module):
         extra_info = []
         device = get_device(data)
 
+        # Get appropiate dimensions based on size of the input tensor
+        if data.ndim > 3:
+            n_samples, n_traj, n_tp, n_dims = data.size()
+        else:
+            n_samples = 1
+            n_traj, n_tp, n_dims = data.size()
+        # Init memory cell based on last state or not
         if use_last_state:
             # If not using last state, expect data to be a tensor [n_samples (prior), n_traj (batch), seq_len, n_dims]
-            n_samples, n_traj, n_tp, n_dims = data.size()
             prev_y = self.last_yi if self.last_yi.size(0) == n_samples else self.last_yi.repeat(n_samples, 1, 1)
             prev_std = self.last_yi_std if self.last_yi_std.size(0) == n_samples else self.last_yi_std.repeat(n_samples, 1, 1)
         else:
             # If not using last state, expect data to be a tensor [n_traj (batch), seq_len, n_dims]
-            n_traj, n_tp, n_dims = data.size()
             prev_y = torch.ones((1, n_traj, self.latent_dim)).to(device) * 1e-2
             prev_std = torch.ones((1, n_traj, self.latent_dim)).to(device) * 1e-2
 
@@ -319,7 +324,7 @@ class Encoder_z0_ODE_RNN(nn.Module):
             # assert(torch.mean(ode_sol[:, :, 0, :]  - prev_y) < 0.001)
 
             yi_ode = ode_sol[:, :, -1, :]
-            if use_last_state:
+            if data.ndim > 3:
                 xi = data[:, :, i, :]
             else:
                 xi = data[:, i, :].unsqueeze(0)
@@ -348,11 +353,18 @@ class Encoder_z0_ODE_RNN(nn.Module):
         assert (not torch.isnan(yi).any())
         assert (not torch.isnan(yi_std).any())
 
-        if not run_backwards:
-            yi = latent_ys[:, 0, :, :]
-            yi_std = latent_ys_std[:, 0, :, :]
+        if run_backwards:
+            y0 = yi.clone()
+            y0_std = yi_std.clone()
+        else:
+            y0 = latent_ys[:, 0, :, :].clone()
+            y0_std = latent_ys_std[:, 0, :, :].clone()
+        
+        # Save in memory last cell state for future computations
+        self.last_yi = yi
+        self.last_yi_std = yi_std
 
-        return yi, yi_std, latent_ys, latent_ys_std, extra_info
+        return y0, y0_std, latent_ys, latent_ys_std, extra_info
 
 
 class Decoder(nn.Module):
